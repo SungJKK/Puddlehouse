@@ -14,7 +14,7 @@ $ python -m tests.smoke_test
 |---|---|---|
 | Table Format | Apache Iceberg | Open table format for the lakehouse (ACID, time travel, schema evolution) |
 | Query Engine | DuckDB | Fast local OLAP queries directly on Iceberg tables |
-| Metadata Catalog | SQLite | Lightweight local Iceberg catalog (stores table metadata and snapshots) |
+| Metadata Catalog | SQLite | Hand-rolled local catalog (tracks table metadata, snapshots, lineage, and partitions) |
 | Orchestration | Dagster | Pipeline orchestration, asset management, and observability |
 | Transformation | dbt | SQL-based data modeling and transformation layer |
 | Compute | Apache Spark | Distributed processing for large-scale ingestion and transformation |
@@ -161,7 +161,7 @@ uv run python scripts/init_catalog.py
 
 ## Design Decisions
 
-- **SQLite as catalog**: Avoids running a heavyweight catalog service (Hive Metastore, Nessie) locally. Uses PyIceberg's SQLite catalog backend.
+- **SQLite as catalog**: Avoids running a heavyweight catalog service (Hive Metastore, Nessie) locally. A hand-rolled catalog (`catalog/`) manages tables, snapshots, lineage, and partitions directly via `sqlite3`.
 - **DuckDB for queries**: Reads Iceberg tables natively via the `iceberg` extension — no Spark needed for ad-hoc analysis.
 - **Spark for ingestion**: Handles large-scale or complex ingestion jobs where DuckDB's single-node limits apply.
 - **Dagster over Airflow**: Asset-centric model fits the lakehouse paradigm better than task-centric DAGs.

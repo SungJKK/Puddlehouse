@@ -40,7 +40,7 @@ def run_smoke_test():
     tables = mgr.list_tables()
     t      = Table("table_id", "zone", "rows", "location")
     for tbl in tables:
-        t.add_row(tbl["table_id"], tbl["zone"], str(tbl["row_count"]), tbl["location"])
+        t.add_row(tbl.table_id, tbl.zone, str(tbl.row_count), tbl.location)
     console.print(t)
 
     # 5. Query with DuckDB
@@ -60,7 +60,7 @@ def run_smoke_test():
     # 6. Verify snapshot
     console.print("[6/6] Verifying snapshots...")
     snap = mgr.get_latest_snapshot("bronze.events")
-    console.print(f"  ✓ Snapshot v{snap['version']} — {snap['row_count']} rows — {snap['byte_size']} bytes")
+    console.print(f"  ✓ Snapshot v{snap.version} — {snap.row_count} rows — {snap.byte_size} bytes")
 
     console.rule("[bold green] Phase 1 PASSED")
 

@@ -1,20 +1,9 @@
 import sqlite3, json, uuid, hashlib
 from pathlib import Path
-from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Optional
 from config import config
-
-@dataclass
-class TableMeta:
-    table_id:    str
-    name:        str
-    zone:        str
-    entity:      str
-    location:    str
-    schema_json: Optional[str] = None
-    owner:       str = "system"
-    row_count:   int = 0
+from catalog.models import TableMeta, Snapshot, Partition, LineageRecord
 
 class CatalogManager:
     def __init__(self, catalog_path: Path = None):
@@ -132,23 +121,23 @@ class CatalogManager:
 
     # ── Reads / Discovery ─────────────────────────────────────────────
 
-    def get_table(self, table_id: str) -> Optional[dict]:
+    def get_table(self, table_id: str) -> Optional[TableMeta]:
         with self._connect() as con:
             row = con.execute(
                 "SELECT * FROM catalog_tables WHERE table_id=?", (table_id,)
             ).fetchone()
-            return dict(row) if row else None
+            return TableMeta.from_row(row) if row else None
 
-    def get_latest_snapshot(self, table_id: str) -> Optional[dict]:
+    def get_latest_snapshot(self, table_id: str) -> Optional[Snapshot]:
         with self._connect() as con:
             row = con.execute("""
                 SELECT * FROM catalog_snapshots
                 WHERE table_id=?
                 ORDER BY version DESC LIMIT 1
             """, (table_id,)).fetchone()
-            return dict(row) if row else None
+            return Snapshot.from_row(row) if row else None
 
-    def list_tables(self, zone: str = None) -> list[dict]:
+    def list_tables(self, zone: str = None) -> list[TableMeta]:
         with self._connect() as con:
             if zone:
                 rows = con.execute(
@@ -158,7 +147,7 @@ class CatalogManager:
                 rows = con.execute(
                     "SELECT * FROM catalog_tables WHERE is_active=1"
                 ).fetchall()
-            return [dict(r) for r in rows]
+            return [TableMeta.from_row(r) for r in rows]
 
     # ── Internal ──────────────────────────────────────────────────────
 
