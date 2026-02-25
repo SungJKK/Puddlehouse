@@ -5,7 +5,11 @@ description = "Local data lakehouse using Iceberg, DuckDB, Spark, Dagster, dbt, 
 requires-python = ">=3.14"
 dependencies = [
     "duckdb>=1.4.4",
+    "faker>=40.5.1",
     "pandas>=3.0.1",
     "pyarrow>=23.0.1",
     "pyiceberg[duckdb,pyarrow,sql-sqlite]>=0.11.0",
+    "pytest>=9.0.2",
+    "python-dotenv>=1.2.1",
+    "rich>=14.3.3",
 ]

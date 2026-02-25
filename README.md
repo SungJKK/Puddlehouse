@@ -2,6 +2,12 @@
 
 A local data lakehouse built from scratch, combining open table formats, a lightweight metadata catalog, orchestration, transformation, and distributed compute. The entire stack runs locally via Docker Compose — no cloud account or managed service required.
 
+## Running
+```
+$ python -m [scripts.init_catalog]
+$ python -m tests.smoke_test
+```
+
 ## Stack
 
 | Layer | Tool | Role |
@@ -167,3 +173,12 @@ uv run python scripts/init_catalog.py
 ## Status
 
 Work in progress — initial setup phase.
+
+---
+
+## Build Phases
+
+A bottom-up build order — each phase produces something testable before the next begins.
+
+---
+
