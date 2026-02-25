@@ -5,8 +5,8 @@ from dataclasses import dataclass, field
 @dataclass
 class LakehouseConfig:
     # Root can be overridden to s3://bucket/ later — this is the scalability hook
-    data_root:    Path = field(default_factory=lambda: Path(os.getenv("DATA_ROOT", "./data")))
-    catalog_path: Path = field(default_factory=lambda: Path(os.getenv("CATALOG_PATH", "./data/catalog.db")))
+    data_root:    Path = field(default_factory=lambda: Path(os.getenv("DATA_ROOT", "./warehouse")))
+    catalog_path: Path = field(default_factory=lambda: Path(os.getenv("CATALOG_PATH", "./warehouse/catalog.db")))
     log_level:    str  = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
 
     @property

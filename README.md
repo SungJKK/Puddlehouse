@@ -1,6 +1,6 @@
 # Local Data Lakehouse
 
-A local data lakehouse built from scratch, combining open table formats, a lightweight metadata catalog, orchestration, transformation, and distributed compute. The entire stack runs locally via Docker Compose — no cloud account or managed service required.
+A local data lakehouse built from scratch, combining Parquet files, a lightweight metadata catalog, orchestration, transformation, and distributed compute. The entire stack runs locally via Docker Compose — no cloud account or managed service required.
 
 ## Running
 ```
@@ -12,8 +12,8 @@ $ python -m tests.smoke_test
 
 | Layer | Tool | Role |
 |---|---|---|
-| Table Format | Apache Iceberg | Open table format for the lakehouse (ACID, time travel, schema evolution) |
-| Query Engine | DuckDB | Fast local OLAP queries directly on Iceberg tables |
+| Storage Format | Parquet | Columnar file format for all lakehouse data (via PyArrow) |
+| Query Engine | DuckDB | Fast local OLAP queries directly on Parquet files |
 | Metadata Catalog | SQLite | Hand-rolled local catalog (tracks table metadata, snapshots, lineage, and partitions) |
 | Orchestration | Dagster | Pipeline orchestration, asset management, and observability |
 | Transformation | dbt | SQL-based data modeling and transformation layer |
@@ -33,16 +33,16 @@ Raw Sources          Streaming Events
 [Dagster] ─── orchestrates ──────────────────────────────┐
     │                      │                              │
     ├──► [Spark] ◄─────────┘                             │
-    │      ├── batch ingest ──► Iceberg Tables (Bronze)   │
-    │      └── stream ingest ─► Iceberg Tables (Bronze)   │
+    │      ├── batch ingest ──► Parquet files (Bronze)   │
+    │      └── stream ingest ─► Parquet files (Bronze)   │
     │                                   │                 │
-    ├──► [dbt + DuckDB] ────────────────► Iceberg Tables (Silver/Gold)
+    ├──► [dbt + DuckDB] ────────────────► Parquet files (Silver/Gold)
     │         (transform & model)                         │
     │                                                     │
-    └──► [SQLite Catalog] ◄── tracks all Iceberg metadata ┘
+    └──► [SQLite Catalog] ◄── tracks all Parquet metadata ┘
               (namespaces, table locations, snapshots)
 
-[DuckDB] ──► ad-hoc queries on any Iceberg table
+[DuckDB] ──► ad-hoc queries on any Parquet file
 ```
 
 ### Medallion Layers
@@ -53,7 +53,7 @@ Raw Sources          Streaming Events
 
 ## Docker Services
 
-Each component runs in its own container. All services are defined in `docker-compose.yml` and share a Docker network (`lakehouse-net`) and a named volume (`warehouse`) for Iceberg data files.
+Each component runs in its own container. All services are defined in `docker-compose.yml` and share a Docker network (`lakehouse-net`) and a named volume (`warehouse`) for Parquet data files.
 
 | Service | Container | Ports |
 |---|---|---|
@@ -65,7 +65,7 @@ Each component runs in its own container. All services are defined in `docker-co
 | Zookeeper | `zookeeper` | `2181` |
 | dbt Runner | `dbt` | — (runs as a job) |
 
-> SQLite and the `warehouse/` data files live on a shared Docker volume mounted into the Dagster, Spark, and dbt containers so all services see the same Iceberg tables and catalog.
+> SQLite and the `warehouse/` data files live on a shared Docker volume mounted into the Dagster, Spark, and dbt containers so all services see the same Parquet files and catalog.
 
 ## Project Structure
 
@@ -75,7 +75,7 @@ lakehouse/
 ├── .env                        # Environment variables (ports, paths, credentials)
 │
 ├── catalog/
-│   ├── Dockerfile              # Lightweight image with PyIceberg + SQLite
+│   ├── Dockerfile              # Lightweight image with PyArrow + SQLite
 │   └── catalog.db              # SQLite catalog file (gitignored, lives on volume)
 │
 ├── dagster/
@@ -85,7 +85,7 @@ lakehouse/
 │   └── lakehouse/
 │       ├── assets/             # Dagster software-defined assets
 │       ├── jobs/               # Job definitions
-│       ├── resources/          # Shared resources (Iceberg catalog, Spark session)
+│       ├── resources/          # Shared resources (SQLite catalog, Spark session)
 │       └── __init__.py
 │
 ├── dbt/
@@ -102,10 +102,10 @@ lakehouse/
 │       └── topics.yml          # Topic definitions (name, partitions, retention)
 │
 ├── spark/
-│   ├── Dockerfile              # Spark image with Iceberg JARs pre-installed
+│   ├── Dockerfile              # Spark image pre-installed
 │   └── jobs/                   # PySpark batch and streaming job scripts
 │
-├── warehouse/                  # Iceberg data files (Parquet + metadata)
+├── warehouse/                  # Parquet data files and metadata
 │   └── .gitkeep                # Keeps dir in git; actual data is gitignored
 │
 ├── scripts/
@@ -136,7 +136,7 @@ cp .env.example .env
 # Build and start all services
 docker compose up --build
 
-# Initialize the Iceberg catalog (first run only)
+# Initialize the catalog (first run only)
 docker compose exec dagster-webserver python scripts/init_catalog.py
 ```
 
@@ -162,13 +162,13 @@ uv run python scripts/init_catalog.py
 ## Design Decisions
 
 - **SQLite as catalog**: Avoids running a heavyweight catalog service (Hive Metastore, Nessie) locally. A hand-rolled catalog (`catalog/`) manages tables, snapshots, lineage, and partitions directly via `sqlite3`.
-- **DuckDB for queries**: Reads Iceberg tables natively via the `iceberg` extension — no Spark needed for ad-hoc analysis.
+- **DuckDB for queries**: Reads Parquet files directly via `read_parquet()` — no Spark needed for ad-hoc analysis.
 - **Spark for ingestion**: Handles large-scale or complex ingestion jobs where DuckDB's single-node limits apply.
 - **Dagster over Airflow**: Asset-centric model fits the lakehouse paradigm better than task-centric DAGs.
-- **dbt on DuckDB**: Lightweight transformation layer; dbt models run via `dbt-duckdb` adapter directly against Iceberg tables.
-- **Kafka for streaming**: Decouples event producers from the lakehouse. Spark Structured Streaming consumes Kafka topics and writes to Iceberg Bronze tables, enabling both batch and real-time ingestion paths.
+- **dbt on DuckDB**: Lightweight transformation layer; dbt models run via `dbt-duckdb` adapter directly against Parquet files.
+- **Kafka for streaming**: Decouples event producers from the lakehouse. Spark Structured Streaming consumes Kafka topics and writes to Parquet Bronze files, enabling both batch and real-time ingestion paths.
 - **Docker Compose over Kubernetes**: Keeps local dev simple. Each service has its own Dockerfile for future portability to a Kubernetes or cloud deployment.
-- **Shared volume for warehouse**: A single named Docker volume (`warehouse`) is mounted into all containers that read/write Iceberg tables, ensuring catalog and data files stay consistent across services.
+- **Shared volume for warehouse**: A single named Docker volume (`warehouse`) is mounted into all containers that read/write Parquet files, ensuring catalog and data files stay consistent across services.
 
 ## Status
 

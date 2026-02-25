@@ -5,13 +5,14 @@ import duckdb
 from scripts.init_lakehouse    import init_lakehouse
 from scripts.init_catalog      import init_catalog
 from scripts.generate_data     import generate_users, generate_events, generate_orders
+from scripts.clean_up          import clean_main
 from catalog.manager           import CatalogManager
 from storage.writer            import write_parquet, read_parquet
 from config                    import config
 
 console = Console()
 
-def run_smoke_test():
+def run_smoke_test(clean_up: bool = False):
     console.rule("[bold blue]Phase 1 Smoke Test")
 
     # 1. Initialize
@@ -64,5 +65,12 @@ def run_smoke_test():
 
     console.rule("[bold green] Phase 1 PASSED")
 
+    # 7. Clean files
+    if clean_up:
+        console.print("Cleaning up data...")
+        clean_main()
+        console.print("  ✓ Done")
+
+
 if __name__ == "__main__":
-    run_smoke_test()
+    run_smoke_test(clean_up=False)

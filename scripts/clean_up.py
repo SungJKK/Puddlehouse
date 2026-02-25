@@ -53,7 +53,7 @@ def _clean_dir(path: Path) -> None:
     for item in sorted(path.rglob("*"), reverse=True):
         if item.is_dir() and item != path:
             contents = list(item.iterdir())
-            if all(f.name == ".gitkeep" for f in contents) or not contents:
+            if any(f.name == ".gitkeep" for f in contents):
                 pass  # keep dirs that hold .gitkeep
             elif not contents:
                 item.rmdir()
@@ -94,7 +94,7 @@ def clean_all() -> None:
         log.info(f"Already absent:    {config.data_root}")
 
 
-def main() -> None:
+def clean_main() -> None:
     parser = argparse.ArgumentParser(description="Clean up lakehouse-generated files.")
     parser.add_argument(
         "--all",
@@ -114,4 +114,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    clean_main()
