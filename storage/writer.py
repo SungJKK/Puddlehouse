@@ -59,16 +59,13 @@ def _read_file_stats(file_path: str) -> list[dict]:
     ]
 
 
-def _compute_table_stats(table: pa.Table, column_id_map: dict[str, str]) -> list[dict]:
+def _compute_table_stats(table: pa.Table) -> list[dict]:
     """
     Compute aggregate column stats from an in-memory Arrow table.
-    Returns [{"column_id", "null_count", "min_value", "max_value"}]
+    Returns [{"column_name", "null_count", "min_value", "max_value"}]
     """
     result = []
     for i, field in enumerate(table.schema):
-        col_id = column_id_map.get(field.name)
-        if not col_id:
-            continue
         col      = table.column(i)
         non_null = col.drop_null()
         min_val  = max_val = None
@@ -79,10 +76,10 @@ def _compute_table_stats(table: pa.Table, column_id_map: dict[str, str]) -> list
             except Exception:
                 pass
         result.append({
-            "column_id": col_id,
-            "null_count": col.null_count,
-            "min_value":  min_val,
-            "max_value":  max_val,
+            "column_name": field.name,
+            "null_count":  col.null_count,
+            "min_value":   min_val,
+            "max_value":   max_val,
         })
     return result
 
@@ -98,7 +95,8 @@ def write_parquet(
 ) -> list[str]:
     """
     Write a DataFrame to the correct zone/entity path as Parquet.
-    Updates the catalog (table, columns, snapshot, files, stats, lineage) automatically.
+    All catalog updates (table, snapshot, columns, stats, lineage, partitions)
+    are committed atomically in a single SQLite transaction.
     Returns list of written file paths.
     """
     run_id  = run_id or str(uuid.uuid4())
@@ -108,9 +106,9 @@ def write_parquet(
     arrow_table = pa.Table.from_pandas(df)
     schema      = [{"name": f.name, "type": str(f.type)} for f in arrow_table.schema]
 
-    table_id = catalog.register_table(zone, entity)
-
+    # ── 1. Write Parquet files to disk ────────────────────────────────
     written_files: list[str] = []
+    partitions:    list[dict] = []
 
     if partition_cols:
         pq.write_to_dataset(
@@ -124,13 +122,13 @@ def write_parquet(
             for part in Path(f).parent.relative_to(out_dir).parts:
                 if "=" in part:
                     key, val = part.split("=", 1)
-                    catalog.register_partition(table_id, key, val, f, len(df))
+                    partitions.append({"key": key, "val": val, "file_path": f, "row_count": len(df)})
     else:
         fname = out_dir / f"{run_id}.parquet"
         pq.write_table(arrow_table, fname, compression="snappy")
         written_files = [str(fname)]
 
-    # Build file metadata for snapshot
+    # ── 2. Gather file metadata and stats (I/O before the transaction) ─
     files_meta = [
         {
             "file_path": f,
@@ -141,37 +139,91 @@ def write_parquet(
     ]
     byte_size = sum(m["byte_size"] for m in files_meta)
 
-    snapshot_id, version, file_id_map = catalog.create_snapshot(
-        table_id, files_meta, len(df), byte_size
+    file_col_stats  = {f: _read_file_stats(f) for f in written_files}
+    table_col_stats = _compute_table_stats(arrow_table)
+
+    # ── 3. Single atomic catalog commit ───────────────────────────────
+    catalog.commit_write(
+        zone=zone,
+        entity=entity,
+        files_meta=files_meta,
+        row_count=len(df),
+        byte_size=byte_size,
+        schema=schema,
+        file_col_stats=file_col_stats,
+        table_col_stats=table_col_stats,
+        source_id=source_id,
+        job_name=job_name,
+        run_id=run_id,
+        partitions=partitions,
     )
-    column_id_map = catalog.register_columns(table_id, version, schema)
-
-    # Per-file column stats (enables file-level predicate pushdown)
-    for file_path, file_id in file_id_map.items():
-        file_stats = _read_file_stats(file_path)
-        col_stats  = [
-            {
-                "column_id":         column_id_map[s["column_name"]],
-                "value_count":       s["value_count"],
-                "null_count":        s["null_count"],
-                "min_value":         s["min_value"],
-                "max_value":         s["max_value"],
-                "column_size_bytes": s["column_size_bytes"],
-            }
-            for s in file_stats
-            if s["column_name"] in column_id_map
-        ]
-        catalog.write_file_column_stats(file_id, table_id, col_stats)
-
-    # Aggregate table-level column stats
-    catalog.upsert_column_stats(
-        table_id,
-        _compute_table_stats(arrow_table, column_id_map)
-    )
-
-    catalog.record_lineage(source_id, table_id, job_name, run_id, 0, len(df))
 
     return written_files
+
+
+def compact(zone: str, entity: str) -> str:
+    """
+    Merge all Parquet files from the latest snapshot into a single file
+    and commit it as a new snapshot. Old snapshots and their files are
+    left on disk untouched so time travel still works.
+    Returns the path of the compacted file.
+    Raises ValueError if the table has no snapshots yet.
+    """
+    table_id = f"{zone}.{entity}"
+    snap = catalog.get_latest_snapshot(table_id)
+    if snap is None:
+        raise ValueError(f"No snapshots found for {table_id} — nothing to compact")
+
+    files = catalog.get_table_files_at_version(table_id, snap.version)
+    if not files:
+        raise ValueError(f"No files registered for {table_id} at version {snap.version}")
+
+    # ── 1. Read full table state into one Arrow table ─────────────────
+    arrow_table = pq.read_table([f.file_path for f in files])
+
+    # ── 2. Write merged file ──────────────────────────────────────────
+    out_dir        = config.data_root / zone / entity
+    out_dir.mkdir(parents=True, exist_ok=True)
+    compacted_path = str(out_dir / f"compacted-{uuid.uuid4()}.parquet")
+    pq.write_table(arrow_table, compacted_path, compression="snappy")
+
+    # ── 3. Gather metadata and stats ──────────────────────────────────
+    schema     = [{"name": f.name, "type": str(f.type)} for f in arrow_table.schema]
+    row_count  = len(arrow_table)
+    byte_size  = Path(compacted_path).stat().st_size
+    files_meta = [{"file_path": compacted_path, "row_count": row_count, "byte_size": byte_size}]
+
+    # ── 4. Atomic catalog commit ──────────────────────────────────────
+    catalog.commit_write(
+        zone=zone,
+        entity=entity,
+        files_meta=files_meta,
+        row_count=row_count,
+        byte_size=byte_size,
+        schema=schema,
+        file_col_stats={compacted_path: _read_file_stats(compacted_path)},
+        table_col_stats=_compute_table_stats(arrow_table),
+        source_id=f"{table_id}@v{snap.version}",
+        job_name="compact",
+        run_id=str(uuid.uuid4()),
+    )
+
+    return compacted_path
+
+
+def read_parquet_at_version(zone: str, entity: str, version: int, filters=None) -> pd.DataFrame:
+    """
+    Read the exact set of Parquet files registered for a specific snapshot version.
+    Raises ValueError if the version does not exist for this table.
+    """
+    table_id = f"{zone}.{entity}"
+    snap = catalog.get_snapshot_at_version(table_id, version)
+    if snap is None:
+        raise ValueError(f"No snapshot at version {version} for {table_id}")
+    files = catalog.get_table_files_at_version(table_id, version)
+    if not files:
+        raise ValueError(f"No files found for {table_id} at version {version}")
+    return pq.read_table([f.file_path for f in files], filters=filters).to_pandas()
 
 
 def read_parquet(zone: str, entity: str, filters=None) -> pd.DataFrame:

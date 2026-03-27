@@ -158,24 +158,9 @@ $ python -m tests.smoke_test
 ```
 
 
-## TODO
+---
+# TODO
 
-### Features
-- [ ] Create CLI interactions
-- [ ] Create FastAPI backend for API calling
-- [ ] Add job scheduling capabilities
-- [ ] Add docker and kubernetes to spin up multiple nodes for scalability
-- [ ] Add option to save files to local, S3, or other cloud file storages
-- [ ] Add frontend UI to manage lakehouse
-- [ ] Add custom LLM applications into the database
+# Project Status
+Refer to file `docs/project_phases.md`
 
-## Status
-
-Phase 1   Foundation          Storage, SQLite catalog, DuckDB, config
-Phase 2   Table Format        ACID writes, snapshots, time travel, compaction
-Phase 3   Query Engine        DuckDB wired to catalog, partition pruning
-Phase 4   Schema Evolution    Versioned schemas, backward compatibility
-Phase 5   Governance          Audit log, freshness, quality contracts
-Phase 6   Platform API        Clean Python API wrapping everything
-Phase 7   UI                  FastAPI backend + React frontend
-Phase 8   Benchmarking        Load tests, metrics, final report

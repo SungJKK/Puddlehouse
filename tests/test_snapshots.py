@@ -124,3 +124,54 @@ class TestGetSnapshotFiles:
     def test_returns_empty_for_unknown_snapshot(self, catalog):
         files = catalog.get_snapshot_files("nonexistent-id")
         assert files == []
+
+
+# ── P2-2: list_snapshots ──────────────────────────────────────────────────────
+
+class TestListSnapshots:
+    def test_returns_empty_when_no_snapshots(self, catalog, table):
+        assert catalog.list_snapshots(table) == []
+
+    def test_returns_all_snapshots(self, catalog, table):
+        catalog.create_snapshot(table, _files(1), 10, 100)
+        catalog.create_snapshot(table, _files(1), 20, 200)
+        catalog.create_snapshot(table, _files(1), 30, 300)
+
+        snaps = catalog.list_snapshots(table)
+        assert len(snaps) == 3
+
+    def test_ordered_by_version_ascending(self, catalog, table):
+        catalog.create_snapshot(table, _files(1), 10, 100)
+        catalog.create_snapshot(table, _files(1), 20, 200)
+        catalog.create_snapshot(table, _files(1), 30, 300)
+
+        snaps = catalog.list_snapshots(table)
+        assert [s.version for s in snaps] == [1, 2, 3]
+
+    def test_each_snapshot_has_correct_row_count(self, catalog, table):
+        catalog.create_snapshot(table, _files(1), 10, 100)
+        catalog.create_snapshot(table, _files(1), 99, 200)
+
+        snaps = catalog.list_snapshots(table)
+        assert snaps[0].row_count == 10
+        assert snaps[1].row_count == 99
+
+    def test_returns_snapshot_objects(self, catalog, table):
+        from catalog.models import Snapshot
+        catalog.create_snapshot(table, _files(1), 10, 100)
+
+        snaps = catalog.list_snapshots(table)
+        assert all(isinstance(s, Snapshot) for s in snaps)
+
+    def test_scoped_to_table(self, catalog):
+        catalog.register_table("bronze", "users")
+        catalog.register_table("bronze", "orders")
+        catalog.create_snapshot("bronze.users",  _files(1), 10, 100)
+        catalog.create_snapshot("bronze.orders", _files(1), 20, 200)
+        catalog.create_snapshot("bronze.users",  _files(1), 30, 300)
+
+        user_snaps  = catalog.list_snapshots("bronze.users")
+        order_snaps = catalog.list_snapshots("bronze.orders")
+
+        assert len(user_snaps)  == 2
+        assert len(order_snaps) == 1
