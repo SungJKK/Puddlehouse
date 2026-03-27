@@ -45,18 +45,31 @@ Phase 2   Table Format        ACID writes, snapshots, time travel, compaction   
     Parquet file and commits it as a new snapshot; old snapshots and their
     files remain on disk for time travel
 
-Phase 3   Query Engine        DuckDB wired to catalog, partition pruning
+Phase 3   Query Engine        DuckDB wired to catalog, partition pruning        ✅ Done
+  - QueryEngine (query/engine.py): wraps a DuckDB in-memory connection; resolves
+    the catalog file list for a zone/entity and registers it as a DuckDB view
+    named {zone}_{entity} before executing arbitrary SQL
+  - Time travel: version= param pins file resolution to a specific snapshot
+    version via get_snapshot_at_version + get_table_files_at_version
+  - Partition pruning: partition_filters= dict queries catalog_partitions to
+    exclude files whose partition values don't match; files with no partition
+    records are always included (cannot be pruned)
+  - File deduplication: file paths are deduplicated before being passed to
+    DuckDB (a file registered in multiple snapshots is read only once)
+
 Phase 4   Schema Evolution    Versioned schemas, backward compatibility
+
 Phase 5   Governance          Audit log, freshness (vacuum/expiry), quality contracts
+
 Phase 6   Platform API        Clean Python API & CLI wrapping everything
-Phase 7   Job Scheduling      Add job scheduling capabilities
+
 Phase 7   UI                  FastAPI backend + React frontend
+
 Phase 8   Benchmarking        Load tests, metrics, final report
 
 
 ## Future Phases
 
-- [ ] Add option to save files to local, S3, or other cloud file storages
-- [ ] Add custom LLM applications into the database
 - [ ] Add docker and kubernetes to spin up multiple nodes for scalability
+- [ ] Add option to save files to local, S3, or other cloud file storages
 
