@@ -513,6 +513,218 @@ class CatalogManager:
             """, (table_id, version)).fetchall()
             return [CatalogFile.from_row(r) for r in rows]
 
+    # ── Governance: Audit Log ─────────────────────────────────────────
+
+    def get_audit_log(
+        self, table_id: str = None, limit: int = 100
+    ) -> list:
+        """Return recent audit log entries ordered newest-first.
+
+        table_id: if provided, filters to entries for that table only.
+        limit:    maximum number of entries to return (default 100).
+        """
+        with self._connect() as con:
+            if table_id:
+                rows = con.execute(
+                    "SELECT * FROM catalog_audit_log WHERE table_id=? "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (table_id, limit),
+                ).fetchall()
+            else:
+                rows = con.execute(
+                    "SELECT * FROM catalog_audit_log "
+                    "ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+        from catalog.models import AuditEntry
+        return [AuditEntry.from_row(r) for r in rows]
+
+    # ── Governance: Vacuum ────────────────────────────────────────────
+
+    def vacuum(
+        self, table_id: str, retain_last_n: int = 1, dry_run: bool = False
+    ) -> list[str]:
+        """
+        Delete Parquet files from snapshots older than the retention window.
+
+        Keeps files from the latest retain_last_n snapshots.
+        Files from older snapshots are deleted from disk and their
+        catalog_files entries are removed.
+
+        After vacuum, time travel to expired snapshots will fail.
+        If dry_run=True, returns the eligible paths without deleting anything.
+        Returns the list of file paths that were (or would be) deleted.
+        """
+        with self._connect() as con:
+            result = con.execute(
+                "SELECT MAX(version) FROM catalog_snapshots WHERE table_id=?",
+                (table_id,),
+            ).fetchone()
+            max_version = result[0]
+
+        if max_version is None:
+            return []
+
+        cutoff = max_version - retain_last_n
+        if cutoff < 1:
+            return []
+
+        with self._connect() as con:
+            rows = con.execute("""
+                SELECT cf.file_id, cf.file_path
+                FROM catalog_files cf
+                JOIN catalog_snapshots cs ON cf.snapshot_id = cs.snapshot_id
+                WHERE cf.table_id = ? AND cs.version <= ?
+            """, (table_id, cutoff)).fetchall()
+
+        eligible = [(row["file_id"], row["file_path"]) for row in rows]
+        if not eligible:
+            return []
+
+        if dry_run:
+            return [fp for _, fp in eligible]
+
+        with self._connect() as con:
+            for file_id, file_path in eligible:
+                fp = Path(file_path)
+                if fp.exists():
+                    fp.unlink()
+                con.execute("DELETE FROM catalog_files WHERE file_id=?", (file_id,))
+                self._audit(con, "VACUUM", table_id, {"file_path": file_path})
+
+        return [fp for _, fp in eligible]
+
+    # ── Governance: Quality Contracts ─────────────────────────────────
+
+    def _ensure_quality_table(self, con: sqlite3.Connection) -> None:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS catalog_quality_contracts (
+                contract_id TEXT PRIMARY KEY,
+                table_id    TEXT,
+                check_type  TEXT NOT NULL,
+                params      TEXT NOT NULL DEFAULT '{}',
+                created_at  TEXT DEFAULT (datetime('now')),
+                is_active   INTEGER DEFAULT 1
+            )
+        """)
+
+    def add_quality_contract(
+        self, table_id: str, check_type: str, params: dict = None
+    ) -> str:
+        """Register a quality contract for a table. Returns the contract_id.
+
+        check_type options:
+          "not_empty"         — params: {"min_rows": 1}
+          "freshness_days"    — params: {"max_days": 7}
+          "max_null_fraction" — params: {"column": "col_name", "max_fraction": 0.05}
+        """
+        valid = {"not_empty", "freshness_days", "max_null_fraction"}
+        if check_type not in valid:
+            raise ValueError(f"Unknown check_type '{check_type}'. Must be one of {valid}")
+
+        contract_id = str(uuid.uuid4())
+        with self._connect() as con:
+            self._ensure_quality_table(con)
+            con.execute(
+                "INSERT INTO catalog_quality_contracts "
+                "(contract_id, table_id, check_type, params) VALUES (?,?,?,?)",
+                (contract_id, table_id, check_type, json.dumps(params or {})),
+            )
+        return contract_id
+
+    def run_quality_checks(self, table_id: str) -> list[dict]:
+        """Run all active quality contracts for a table.
+
+        Returns a list of dicts:
+          {"contract_id", "check_type", "passed": bool, "details": str}
+        """
+        with self._connect() as con:
+            self._ensure_quality_table(con)
+            rows = con.execute(
+                "SELECT * FROM catalog_quality_contracts "
+                "WHERE table_id=? AND is_active=1",
+                (table_id,),
+            ).fetchall()
+
+        if not rows:
+            return []
+
+        snap    = self.get_latest_snapshot(table_id)
+        results = []
+
+        for row in rows:
+            check_type  = row["check_type"]
+            params      = json.loads(row["params"])
+            contract_id = row["contract_id"]
+
+            if check_type == "not_empty":
+                min_rows  = params.get("min_rows", 1)
+                row_count = snap.row_count if snap else 0
+                passed    = row_count >= min_rows
+                details   = f"row_count={row_count}, min_rows={min_rows}"
+
+            elif check_type == "freshness_days":
+                max_days = params.get("max_days", 7)
+                if snap is None or snap.created_at is None:
+                    passed  = False
+                    details = "no snapshot found"
+                else:
+                    created = datetime.fromisoformat(
+                        snap.created_at.replace("Z", "+00:00")
+                    )
+                    if created.tzinfo is None:
+                        created = created.replace(tzinfo=timezone.utc)
+                    age_days = (datetime.now(timezone.utc) - created).days
+                    passed   = age_days <= max_days
+                    details  = f"age_days={age_days}, max_days={max_days}"
+
+            elif check_type == "max_null_fraction":
+                col_name     = params.get("column", "")
+                max_fraction = params.get("max_fraction", 0.0)
+                row_count    = snap.row_count if snap else 0
+
+                if row_count == 0:
+                    passed  = False
+                    details = "no rows"
+                else:
+                    with self._connect() as con:
+                        col_row = con.execute(
+                            "SELECT column_id FROM catalog_columns "
+                            "WHERE table_id=? AND column_name=? AND dropped_at_version IS NULL",
+                            (table_id, col_name),
+                        ).fetchone()
+
+                    if col_row is None:
+                        passed  = False
+                        details = f"column '{col_name}' not found"
+                    else:
+                        col_id = col_row["column_id"]
+                        with self._connect() as con:
+                            stat = con.execute(
+                                "SELECT null_count FROM catalog_column_stats "
+                                "WHERE table_id=? AND column_id=?",
+                                (table_id, col_id),
+                            ).fetchone()
+                        null_count = stat["null_count"] if stat else 0
+                        fraction   = null_count / row_count
+                        passed     = fraction <= max_fraction
+                        details    = (
+                            f"null_fraction={fraction:.4f}, "
+                            f"max_fraction={max_fraction}, column={col_name}"
+                        )
+            else:
+                passed  = False
+                details = f"unknown check_type: {check_type}"
+
+            results.append({
+                "contract_id": contract_id,
+                "check_type":  check_type,
+                "passed":      passed,
+                "details":     details,
+            })
+
+        return results
+
     # ── Internal ──────────────────────────────────────────────────────
 
     def _audit(self, con: sqlite3.Connection, operation: str,

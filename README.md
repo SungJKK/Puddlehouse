@@ -161,12 +161,15 @@ $ python -m tests.smoke_test
 ---
 # TODO
 
-### Phase 4 — Schema Evolution
+### Phase 5 — Governance
 
-- [x] **P4-1** — `SchemaEvolutionError` + `CatalogManager.validate_schema_evolution()` — raises if an existing column is removed or has its type changed; adding new columns is allowed
-- [x] **P4-2** — Enforce in `write_parquet()` — call `validate_schema_evolution` before `commit_write`; `compact()` bypasses validation (schema never changes during compaction)
-- [x] **P4-3** — Tests for schema evolution validation via the writer
+- [x] **P5-1** — `CatalogManager.get_audit_log(table_id, limit)` — read API for the existing audit log; returns `list[AuditEntry]` ordered newest-first
+- [x] **P5-2** — `CatalogManager.vacuum(table_id, retain_last_n, dry_run)` — deletes Parquet files from snapshots older than the retention window; removes their `catalog_files` entries; returns the list of deleted paths; `dry_run=True` previews without deleting
+- [x] **P5-3** — Quality contracts — `catalog_quality_contracts` table; `add_quality_contract()` registers a check (`not_empty`, `freshness_days`, `max_null_fraction`); `run_quality_checks()` evaluates all active contracts and returns pass/fail results
+- [x] **P5-4** — Tests for audit log, vacuum, and quality contracts
 
-# Project Status
+
+## Project Status
+
 Refer to file `docs/project_phases.md`
 

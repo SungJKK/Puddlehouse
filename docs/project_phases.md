@@ -67,7 +67,19 @@ Phase 4   Schema Evolution    Versioned schemas, backward compatibility         
   - compact() is exempt: it re-writes existing data with the same schema and
     calls commit_write directly, bypassing write_parquet validation
 
-Phase 5   Governance          Audit log, freshness (vacuum/expiry), quality contracts
+Phase 5   Governance          Audit log, freshness (vacuum/expiry), quality contracts  ✅ Done
+  - CatalogManager.get_audit_log(): read API for the existing catalog_audit_log
+    table; filters by table_id and limit; returns list[AuditEntry] newest-first
+  - CatalogManager.vacuum(): deletes Parquet files from snapshots older than
+    retain_last_n; removes catalog_files entries; dry_run=True previews without
+    deleting; vacuum operations are written to the audit log
+  - catalog_quality_contracts table added to schema.sql (created on-demand via
+    _ensure_quality_table for existing DBs)
+  - CatalogManager.add_quality_contract(): registers not_empty, freshness_days,
+    or max_null_fraction checks with JSON params
+  - CatalogManager.run_quality_checks(): evaluates all active contracts against
+    the latest snapshot and catalog stats; returns [{contract_id, check_type,
+    passed, details}] per contract
 
 Phase 6   Platform API        Clean Python API & CLI wrapping everything
 

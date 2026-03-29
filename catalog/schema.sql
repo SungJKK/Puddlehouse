@@ -119,6 +119,15 @@ CREATE TABLE IF NOT EXISTS catalog_audit_log (
     created_at  TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS catalog_quality_contracts (
+    contract_id TEXT PRIMARY KEY,
+    table_id    TEXT REFERENCES catalog_tables(table_id),
+    check_type  TEXT NOT NULL,              -- "not_empty" / "freshness_days" / "max_null_fraction"
+    params      TEXT NOT NULL DEFAULT '{}', -- JSON params for the check
+    created_at  TEXT DEFAULT (datetime('now')),
+    is_active   INTEGER DEFAULT 1
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_columns_table       ON catalog_columns(table_id);
 CREATE INDEX IF NOT EXISTS idx_snapshots_table     ON catalog_snapshots(table_id);
