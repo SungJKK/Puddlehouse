@@ -142,7 +142,8 @@ def write_parquet(
     file_col_stats  = {f: _read_file_stats(f) for f in written_files}
     table_col_stats = _compute_table_stats(arrow_table)
 
-    # ── 3. Single atomic catalog commit ───────────────────────────────
+    # ── 3. Validate schema evolution, then atomic catalog commit ──────
+    catalog.validate_schema_evolution(f"{zone}.{entity}", schema)
     catalog.commit_write(
         zone=zone,
         entity=entity,

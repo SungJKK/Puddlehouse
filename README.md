@@ -161,6 +161,11 @@ $ python -m tests.smoke_test
 ---
 # TODO
 
+### Phase 4 — Schema Evolution
+
+- [x] **P4-1** — `SchemaEvolutionError` + `CatalogManager.validate_schema_evolution()` — raises if an existing column is removed or has its type changed; adding new columns is allowed
+- [x] **P4-2** — Enforce in `write_parquet()` — call `validate_schema_evolution` before `commit_write`; `compact()` bypasses validation (schema never changes during compaction)
+- [x] **P4-3** — Tests for schema evolution validation via the writer
 
 # Project Status
 Refer to file `docs/project_phases.md`

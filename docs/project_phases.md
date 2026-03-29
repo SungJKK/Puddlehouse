@@ -57,7 +57,15 @@ Phase 3   Query Engine        DuckDB wired to catalog, partition pruning        
   - File deduplication: file paths are deduplicated before being passed to
     DuckDB (a file registered in multiple snapshots is read only once)
 
-Phase 4   Schema Evolution    Versioned schemas, backward compatibility
+Phase 4   Schema Evolution    Versioned schemas, backward compatibility           ✅ Done
+  - SchemaEvolutionError (catalog/manager.py): typed exception for invalid schema changes
+  - CatalogManager.validate_schema_evolution(): checks new schema against the
+    current active columns; raises if any column is removed or has its type
+    changed; passes silently on first write (no existing schema to compare)
+  - write_parquet() enforcement: validate_schema_evolution is called before
+    commit_write so any invalid evolution is rejected before data is written
+  - compact() is exempt: it re-writes existing data with the same schema and
+    calls commit_write directly, bypassing write_parquet validation
 
 Phase 5   Governance          Audit log, freshness (vacuum/expiry), quality contracts
 

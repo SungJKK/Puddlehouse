@@ -6,6 +6,10 @@ from config import config
 from catalog.models import TableMeta, Column, Snapshot, CatalogFile, DeleteFile, View, Partition, LineageRecord
 
 
+class SchemaEvolutionError(ValueError):
+    """Raised when a write would violate backward-compatible schema evolution rules."""
+
+
 class CatalogManager:
     def __init__(self, catalog_path: Path = None):
         self.catalog_path = catalog_path or config.catalog_path
@@ -228,6 +232,47 @@ class CatalogManager:
                 (partition_id, table_id, partition_key, partition_val, file_path, row_count)
                 VALUES (?,?,?,?,?,?)
             """, (partition_id, table_id, key, val, file_path, row_count))
+
+    # ── Schema Evolution Validation ───────────────────────────────────
+
+    def validate_schema_evolution(self, table_id: str, new_schema: list[dict]) -> None:
+        """
+        Validate that new_schema is a backward-compatible evolution of the current schema.
+
+        Allowed: adding new columns.
+        Disallowed: removing a column, changing a column's type.
+
+        Does nothing on the first write (no existing schema to validate against).
+        Raises SchemaEvolutionError with a descriptive message if any rule is violated.
+        """
+        with self._connect() as con:
+            rows = con.execute(
+                "SELECT column_name, column_type FROM catalog_columns "
+                "WHERE table_id=? AND dropped_at_version IS NULL",
+                (table_id,),
+            ).fetchall()
+
+        existing = {row["column_name"]: row["column_type"] for row in rows}
+        if not existing:
+            return  # first write — nothing to validate against
+
+        new_by_name = {col["name"]: col["type"] for col in new_schema}
+
+        removed = sorted(set(existing) - set(new_by_name))
+        if removed:
+            raise SchemaEvolutionError(
+                f"Cannot remove columns from {table_id}: {removed}"
+            )
+
+        type_changes = [
+            f"'{name}': {existing[name]} -> {new_by_name[name]}"
+            for name in existing
+            if name in new_by_name and existing[name] != new_by_name[name]
+        ]
+        if type_changes:
+            raise SchemaEvolutionError(
+                f"Cannot change column types in {table_id}: {type_changes}"
+            )
 
     # ── Atomic Write Commit ───────────────────────────────────────────
 
