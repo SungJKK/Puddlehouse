@@ -228,7 +228,7 @@ Validate whether a proposed schema is backward-compatible with the current schem
 }
 ```
 
-**Response `422`** (incompatible):
+**Response `200`** (incompatible):
 ```json
 {
   "valid": false,
