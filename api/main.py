@@ -9,7 +9,7 @@ from api.errors import (
     value_error_handler,
     internal_error_handler,
 )
-from api.routers import tables, snapshots, schema, data, partitions, stats
+from api.routers import tables, snapshots, schema, data, partitions, stats, lineage
 
 
 @asynccontextmanager
@@ -33,3 +33,4 @@ app.include_router(schema.router, prefix="/api/v1")
 app.include_router(data.router, prefix="/api/v1")
 app.include_router(partitions.router, prefix="/api/v1")
 app.include_router(stats.router, prefix="/api/v1")
+app.include_router(lineage.router, prefix="/api/v1")

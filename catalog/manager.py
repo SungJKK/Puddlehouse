@@ -226,7 +226,8 @@ class CatalogManager:
 
     def record_lineage(self, source_id: str, target_id: str,
                        job_name: str, run_id: str,
-                       rows_read: int, rows_written: int) -> None:
+                       rows_read: int, rows_written: int) -> str:
+        """Record a lineage relationship. Returns the lineage_id."""
         lineage_id = str(uuid.uuid4())
         with self._connect() as con:
             con.execute("""
@@ -235,6 +236,29 @@ class CatalogManager:
                 VALUES (?,?,?,?,?,?,?)
             """, (lineage_id, source_id, target_id, job_name, run_id, rows_read, rows_written))
             self._audit(con, "LINEAGE", target_id, {"source": source_id, "job": job_name})
+        return lineage_id
+
+    def get_lineage(self, table_id: str, direction: str = "both") -> dict:
+        """Return upstream and/or downstream lineage records for a table.
+
+        direction: 'upstream' (table is target), 'downstream' (table is source), 'both'.
+        """
+        upstream = []
+        downstream = []
+        with self._connect() as con:
+            if direction in ("upstream", "both"):
+                rows = con.execute(
+                    "SELECT * FROM catalog_lineage WHERE target_id=? ORDER BY created_at DESC",
+                    (table_id,),
+                ).fetchall()
+                upstream = [LineageRecord.from_row(r) for r in rows]
+            if direction in ("downstream", "both"):
+                rows = con.execute(
+                    "SELECT * FROM catalog_lineage WHERE source_id=? ORDER BY created_at DESC",
+                    (table_id,),
+                ).fetchall()
+                downstream = [LineageRecord.from_row(r) for r in rows]
+        return {"upstream": upstream, "downstream": downstream}
 
     # ── Partitions ────────────────────────────────────────────────────
 
