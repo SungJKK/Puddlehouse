@@ -239,7 +239,8 @@ class CatalogManager:
     # ── Partitions ────────────────────────────────────────────────────
 
     def register_partition(self, table_id: str, key: str, val: str,
-                           file_path: str, row_count: int) -> None:
+                           file_path: str, row_count: int) -> str:
+        """Register a partition entry. Returns the partition_id."""
         partition_id = hashlib.md5(f"{table_id}{key}{val}{file_path}".encode()).hexdigest()
         with self._connect() as con:
             con.execute("""
@@ -247,6 +248,16 @@ class CatalogManager:
                 (partition_id, table_id, partition_key, partition_val, file_path, row_count)
                 VALUES (?,?,?,?,?,?)
             """, (partition_id, table_id, key, val, file_path, row_count))
+        return partition_id
+
+    def list_partitions(self, table_id: str) -> list[Partition]:
+        """Return all partition entries for a table."""
+        with self._connect() as con:
+            rows = con.execute(
+                "SELECT * FROM catalog_partitions WHERE table_id=? ORDER BY created_at",
+                (table_id,),
+            ).fetchall()
+            return [Partition.from_row(r) for r in rows]
 
     # ── Schema Evolution Validation ───────────────────────────────────
 
