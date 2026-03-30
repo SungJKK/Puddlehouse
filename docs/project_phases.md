@@ -81,7 +81,68 @@ Phase 5   Governance          Audit log, freshness (vacuum/expiry), quality cont
     the latest snapshot and catalog stats; returns [{contract_id, check_type,
     passed, details}] per contract
 
-Phase 6   Platform API        Clean REST API (FastAPI) & CLI (Typer) wrapper
+Phase 6   Platform API        Clean REST API (FastAPI) & CLI (Typer) wrapper   ✅ Done
+  Phase 6.1 — REST API (api/)
+  - FastAPI app (api/main.py): lifespan context initializes shared CatalogManager
+    and QueryEngine via init_shared(); all routers mounted under /api/v1
+  - api/deps.py: get_catalog() and get_engine() FastAPI dependency functions
+    returning shared instances
+  - api/errors.py: exception handlers mapping KeyError → 404, SchemaEvolutionError
+    → 422, ValueError → 422, unhandled → 500; all errors use standard
+    {"error": {"code", "message", "details"}} shape
+  - Tables router: GET /tables (list, filter by zone), GET/DELETE /tables/{zone}/{entity}
+  - Snapshots router: GET .../snapshots (list), .../snapshots/latest,
+    .../snapshots/{version} — each with embedded file manifest
+  - Schema router: GET .../schema (with optional ?version= for time travel),
+    POST .../schema/validate (backward-compat check, no writes)
+  - Data router: POST .../data (write records, atomic snapshot commit),
+    GET .../data (read with limit/offset/version), POST .../compact
+  - Partitions router: GET/POST .../partitions
+  - Stats router: GET .../stats (table-level aggregates),
+    GET .../stats/files (per-file per-column stats)
+  - Lineage router: GET .../lineage (upstream/downstream/both),
+    POST .../lineage (record a source → target relationship)
+  - Governance router: GET .../audit, GET/POST .../quality/contracts,
+    POST .../quality/run (exits with all_passed bool),
+    POST .../vacuum (dry_run=true default)
+  - Query router: POST /query — executes arbitrary SQL via DuckDB; table
+    registered as {zone}_{entity} view; supports time travel and partition filters
+  - Views router: GET/POST /views, GET /views/{view_id},
+    POST /views/{view_id}/refresh (materialized views only)
+  - Test suite (tests/api/): TestClient-based; one happy-path + error-path
+    test per router group
+
+  Phase 6.2 — CLI (cli/)
+  - cli/config.py: load_config() resolves api_url and output format with
+    precedence: CLI flag → LH_API_URL/LH_OUTPUT env vars →
+    ~/.lh/config.toml → built-in defaults
+  - cli/client.py: LakehouseClient wraps httpx; on non-2xx responses parses
+    {"error": {"code", "message"}} body and raises typed ApiError
+  - cli/render.py: render() dispatches to rich table (default), csv (stdlib),
+    or json; render_kv() for single-record detail views; print_success /
+    print_error (stderr via dedicated Console); set_quiet() suppresses
+    decorative output globally
+  - cli/utils.py: parse_target() splits 'zone/entity' argument strings
+  - cli/main.py: root lh Typer app; group commands (tables, snapshots, schema,
+    data, partitions, stats, lineage, quality, views) via add_typer; top-level
+    commands (audit, vacuum, query) registered directly to avoid double-nesting;
+    @app.callback sets ctx.obj = Config and calls set_quiet()
+  - 12 command modules in cli/commands/:
+      tables (list, get, delete with confirmation)
+      snapshots (list, latest, get --version)
+      schema (get, validate — exits 1 on incompatible schema)
+      data (read, write [Parquet only], compact)
+      partitions (list, add)
+      stats (table, files)
+      lineage (get --direction, record)
+      audit (top-level, --limit)
+      quality (contracts list, contracts add, run — exits 1 on failure)
+      vacuum (top-level, dry-run default, --execute to commit)
+      query (top-level, --sql or --file, --partition repeatable)
+      views (list, get, create --sql/--file, refresh --snapshot-id)
+  - Registered as lh entrypoint via pyproject.toml [project.scripts];
+    tool.uv.package=true + tool.setuptools.packages.find avoids needing
+    a separate build backend
 
 Phase 7   Benchmarking        Load tests, metrics, final report
 
