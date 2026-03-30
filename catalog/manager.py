@@ -539,6 +539,47 @@ class CatalogManager:
             """, (table_id, version)).fetchall()
             return [CatalogFile.from_row(r) for r in rows]
 
+    # ── Stats Reads ───────────────────────────────────────────────────
+
+    def get_column_stats(self, table_id: str) -> list[dict]:
+        """Return aggregate table-level column stats with column names."""
+        with self._connect() as con:
+            rows = con.execute("""
+                SELECT cs.*, cc.column_name
+                FROM catalog_column_stats cs
+                JOIN catalog_columns cc ON cs.column_id = cc.column_id
+                WHERE cs.table_id = ?
+            """, (table_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_file_column_stats(self, table_id: str) -> list[dict]:
+        """Return per-file, per-column stats grouped by file."""
+        with self._connect() as con:
+            rows = con.execute("""
+                SELECT fcs.*, cf.file_path, cc.column_name
+                FROM catalog_file_column_stats fcs
+                JOIN catalog_files cf ON fcs.file_id = cf.file_id
+                JOIN catalog_columns cc ON fcs.column_id = cc.column_id
+                WHERE fcs.table_id = ?
+                ORDER BY fcs.file_id
+            """, (table_id,)).fetchall()
+
+        # Group by file
+        files: dict[str, dict] = {}
+        for r in rows:
+            fid = r["file_id"]
+            if fid not in files:
+                files[fid] = {"file_id": fid, "file_path": r["file_path"], "column_stats": []}
+            files[fid]["column_stats"].append({
+                "column_id": r["column_id"],
+                "name": r["column_name"],
+                "null_count": r["null_count"],
+                "min_value": r["min_value"],
+                "max_value": r["max_value"],
+                "byte_size": r["column_size_bytes"],
+            })
+        return list(files.values())
+
     # ── Governance: Audit Log ─────────────────────────────────────────
 
     def get_audit_log(
