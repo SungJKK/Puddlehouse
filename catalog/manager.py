@@ -46,6 +46,21 @@ class CatalogManager:
             self._audit(con, "REGISTER", table_id, {})
         return table_id
 
+    def deregister_table(self, table_id: str) -> bool:
+        """Mark a table as inactive (soft delete). Returns False if table not found."""
+        with self._connect() as con:
+            row = con.execute(
+                "SELECT table_id FROM catalog_tables WHERE table_id=? AND is_active=1",
+                (table_id,),
+            ).fetchone()
+            if not row:
+                return False
+            con.execute(
+                "UPDATE catalog_tables SET is_active=0 WHERE table_id=?", (table_id,)
+            )
+            self._audit(con, "DEREGISTER", table_id, {})
+        return True
+
     # ── Column Registration (schema evolution) ────────────────────────
 
     def register_columns(self, table_id: str, version: int,
