@@ -81,7 +81,7 @@ Phase 5   Governance          Audit log, freshness (vacuum/expiry), quality cont
     the latest snapshot and catalog stats; returns [{contract_id, check_type,
     passed, details}] per contract
 
-Phase 6   Platform API        Clean Python API & CLI wrapping everything
+Phase 6   Platform API        Clean REST API (FastAPI) & CLI (Typer) wrapper
 
 Phase 7   Benchmarking        Load tests, metrics, final report
 

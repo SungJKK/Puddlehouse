@@ -179,7 +179,7 @@ Refer to file `docs/project_phases.md`
 
 ---
 
-## Phase 7: CLI Wrapper
+## Phase 6.2: CLI Wrapper
 
 The CLI (`lh`) is a thin Typer-based client over the REST API. Every command translates to one or more `httpx` calls. No direct catalog or storage access from the CLI.
 
