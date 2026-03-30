@@ -13,8 +13,18 @@ dependencies = [
     "pytest>=9.0.2",
     "python-dotenv>=1.2.1",
     "rich>=14.3.3",
+    "typer>=0.15.0",
     "uvicorn[standard]>=0.34.0",
 ]
+
+[project.scripts]
+lh = "cli.main:app"
+
+[tool.uv]
+package = true
+
+[tool.setuptools.packages.find]
+include = ["cli*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

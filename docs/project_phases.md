@@ -83,9 +83,7 @@ Phase 5   Governance          Audit log, freshness (vacuum/expiry), quality cont
 
 Phase 6   Platform API        Clean Python API & CLI wrapping everything
 
-Phase 7   UI                  FastAPI backend + React frontend
-
-Phase 8   Benchmarking        Load tests, metrics, final report
+Phase 7   Benchmarking        Load tests, metrics, final report
 
 
 ## Future Phases
@@ -93,4 +91,5 @@ Phase 8   Benchmarking        Load tests, metrics, final report
 - [ ] Add docker and kubernetes to spin up multiple nodes for scalability
 - [ ] Add option to save files to local, S3, or other cloud file storages
 - [ ] Add user credentials
+- [ ] Add frontend web app for user
 

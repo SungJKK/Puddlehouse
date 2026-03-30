@@ -159,73 +159,88 @@ $ python -m tests.lakehouse.test_smoke
 
 
 ---
+
+## Known Limitations
+
+### `lh data write` — Parquet input only
+
+`lh data write` currently accepts only `.parquet` files. CSV and JSON input files are not yet supported — the CLI would need to parse them client-side and convert to records before POSTing to the API.
+
+Planned: add CSV and JSON support to `lh data write` once the core CLI is stable.
+
+---
+
 # TODO
-
-### Phase 6 — REST API
-
-The REST API wraps all catalog, storage, and query engine functionality over HTTP. Built with FastAPI. Base URL: `http://localhost:8000/api/v1`. Full endpoint spec in `docs/api_design.md`.
-
-**P6-1 — Setup and scaffolding**
-- [x] Add `fastapi` and `uvicorn[standard]` to `pyproject.toml` dependencies
-- [x] Create `api/` package with `__init__.py`
-- [x] Create `api/main.py` — instantiate the `FastAPI` app, register all routers under `/api/v1`, add a startup event that initializes a shared `CatalogManager` and `QueryEngine`
-- [x] Create `api/deps.py` — `get_catalog()` and `get_engine()` dependency functions that return the shared instances via `Depends`
-- [x] Create `api/errors.py` — exception handlers that map `KeyError` → 404, `SchemaEvolutionError` → 422, `ValueError` → 422, and unhandled exceptions → 500, all using the standard `{"error": {"code": ..., "message": ..., "details": {}}}` shape from the spec
-
-**P6-2 — Tables router** (`api/routers/tables.py`)
-- [x] `GET /tables` — call `catalog.list_tables()`; accept optional `?zone=` query param to filter; return `{"tables": [...]}` with `table_id`, `zone`, `entity`, `location`, `owner`, `row_count`, `created_at`, `updated_at`
-- [x] `GET /tables/{zone}/{entity}` — call `catalog.get_table(f"{zone}.{entity}")`; raise 404 if not found; include `latest_version` from `catalog.get_latest_snapshot()`
-- [x] `DELETE /tables/{zone}/{entity}` — mark the table inactive in the catalog (set `is_active = 0`); return 204; raise 404 if not found
-
-**P6-3 — Snapshots router** (`api/routers/snapshots.py`)
-- [x] `GET /tables/{zone}/{entity}/snapshots` — call `catalog.list_snapshots(table_id)`; return `{"table_id": ..., "snapshots": [...]}`
-- [x] `GET /tables/{zone}/{entity}/snapshots/latest` — call `catalog.get_latest_snapshot(table_id)` + `catalog.get_snapshot_files(snapshot_id)`; return snapshot with embedded `files` list; raise 404 if no snapshot exists
-- [x] `GET /tables/{zone}/{entity}/snapshots/{version}` — call `catalog.get_snapshot_at_version(table_id, version)` + `catalog.get_snapshot_files(snapshot_id)`; same response shape as `/latest`; raise 404 if version not found
-
-**P6-4 — Schema router** (`api/routers/schema.py`)
-- [x] `GET /tables/{zone}/{entity}/schema` — accept optional `?version=` param; call `catalog.get_schema_at_version(table_id, version)` (or latest version if omitted); return `{"table_id": ..., "version": ..., "columns": [...]}`
-- [x] `POST /tables/{zone}/{entity}/schema/validate` — accept `{"schema": [{"name": ..., "type": ...}, ...]}` body; call `catalog.validate_schema_evolution(table_id, proposed_columns)` inside a try/except; return `{"valid": true, "added_columns": [...], "message": "..."}` on success or `{"valid": false, "errors": [...]}` with 422 on failure; do not write anything
-
-**P6-5 — Data router** (`api/routers/data.py`)
-- [x] `POST /tables/{zone}/{entity}/data` — accept body with `records`, optional `partition_cols`, `job_name`, `run_id`, `source_id`; convert `records` list-of-dicts to a PyArrow Table; call `write_parquet()`; return 201 with `snapshot_id`, `version`, `files_written`, `row_count`, `byte_size`; return 422 on `SchemaEvolutionError`
-- [x] `GET /tables/{zone}/{entity}/data` — accept optional `?version=`, `?limit=` (default 1000, max 10000), `?offset=`; call `read_parquet_at_version()` if version given else `read_parquet()`; slice with limit/offset; return `{"table_id": ..., "version": ..., "row_count": ..., "columns": [...], "rows": [...]}`
-- [x] `POST /tables/{zone}/{entity}/compact` — call `compact(zone, entity)`; return `{"snapshot_id": ..., "version": ..., "compacted_file": ..., "files_merged": ..., "row_count": ...}`
-
-**P6-6 — Partitions router** (`api/routers/partitions.py`)
-- [x] `GET /tables/{zone}/{entity}/partitions` — query `catalog_partitions` for the table; return `{"table_id": ..., "partitions": [...]}`
-- [x] `POST /tables/{zone}/{entity}/partitions` — accept `{"key": ..., "value": ..., "file_path": ..., "row_count": ...}`; call `catalog.register_partition()`; return 201 with `{"partition_id": ...}`
-
-**P6-7 — Stats router** (`api/routers/stats.py`)
-- [x] `GET /tables/{zone}/{entity}/stats` — query `catalog_column_stats` for the table's columns; return `{"table_id": ..., "column_stats": [...]}`
-- [x] `GET /tables/{zone}/{entity}/stats/files` — query `catalog_file_column_stats` joined to `catalog_files`; group by file; return `{"table_id": ..., "file_stats": [{"file_id": ..., "file_path": ..., "column_stats": [...]}]}`
-
-**P6-8 — Lineage router** (`api/routers/lineage.py`)
-- [x] `GET /tables/{zone}/{entity}/lineage` — accept optional `?direction=` (`upstream`, `downstream`, `both`); query `catalog_lineage` where `target_id = table_id` (upstream) and/or `source_id = table_id` (downstream); return `{"table_id": ..., "upstream": [...], "downstream": [...]}`
-- [x] `POST /tables/{zone}/{entity}/lineage` — accept `{"source_id": ..., "job_name": ..., "run_id": ..., "rows_read": ..., "rows_written": ...}`; call `catalog.record_lineage()`; return 201 with `{"lineage_id": ...}`
-
-**P6-9 — Governance router** (`api/routers/governance.py`)
-- [x] `GET /tables/{zone}/{entity}/audit` — accept optional `?limit=` (default 100); call `catalog.get_audit_log(table_id, limit)`; return `{"table_id": ..., "entries": [...]}`
-- [x] `GET /tables/{zone}/{entity}/quality/contracts` — query `catalog_quality_contracts` for active contracts; return `{"table_id": ..., "contracts": [...]}`
-- [x] `POST /tables/{zone}/{entity}/quality/contracts` — accept `{"check_type": ..., "params": {...}}`; call `catalog.add_quality_contract()`; return 201 with `{"contract_id": ...}`
-- [x] `POST /tables/{zone}/{entity}/quality/run` — call `catalog.run_quality_checks(table_id)`; return `{"table_id": ..., "all_passed": bool, "results": [...]}`
-- [x] `POST /tables/{zone}/{entity}/vacuum` — accept `{"retain_last_n": int, "dry_run": bool}` (defaults: `retain_last_n=1`, `dry_run=true`); call `catalog.vacuum()`; return `{"table_id": ..., "dry_run": bool, "snapshots_removed": ..., "files_removed": ..., "paths": [...]}`
-
-**P6-10 — Query router** (`api/routers/query.py`)
-- [x] `POST /query` — accept `{"sql": ..., "context": {"zone": ..., "entity": ..., "version": ..., "partition_filters": {...}}}`; instantiate (or reuse) `QueryEngine`; call `engine.query(sql, zone, entity, version, partition_filters)`; serialize the DuckDB result to `{"columns": [...], "rows": [[...]], "row_count": ..., "version_used": ...}`; return 400 on SQL errors, 404 if table not found
-
-**P6-11 — Views router** (`api/routers/views.py`)
-- [x] `GET /views` — accept optional `?zone=` and `?type=` (`view` or `materialized_view`); query `catalog_views`; return `{"views": [...]}`
-- [x] `POST /views` — accept `{"name": ..., "zone": ..., "view_type": ..., "sql": ..., "owner": ...}`; call `catalog.register_view()`; return 201 with `{"view_id": ...}`
-- [x] `GET /views/{view_id}` — look up view by `view_id`; return full view record including `refresh_snapshot_id` and `last_refreshed_at`; raise 404 if not found
-- [x] `POST /views/{view_id}/refresh` — accept `{"snapshot_id": ...}`; call `catalog.refresh_materialized_view(view_id, snapshot_id)`; return 422 if the view is a plain `view` (not materialized); return `{"view_id": ..., "refresh_snapshot_id": ..., "last_refreshed_at": ...}`
-
-**P6-12 — Tests** (`tests/api/`)
-- [x] Use FastAPI's `TestClient` (from `starlette.testclient`); patch the catalog and query engine with real in-memory instances populated from `generate_data.py` fixtures
-- [x] One happy-path test per router group (tables, snapshots, schema, data write+read, compact, partitions, stats, lineage, audit, quality contracts + run, vacuum, query, views)
-- [x] One error-path test per meaningful error case: 404 for unknown table/snapshot/view, 422 for schema evolution violation, 422 for refreshing a non-materialized view
 
 
 ## Project Status
 
 Refer to file `docs/project_phases.md`
+
+---
+
+## Phase 7: CLI Wrapper
+
+The CLI (`lh`) is a thin Typer-based client over the REST API. Every command translates to one or more `httpx` calls. No direct catalog or storage access from the CLI.
+
+### Step 1 — Scaffold the CLI package
+
+- [ ] Add `typer`, `httpx`, and `rich` to `pyproject.toml` dependencies
+- [ ] Create the `cli/` package with the following layout:
+  ```
+  cli/
+  ├── __init__.py
+  ├── main.py          # root `lh` Typer app; registers all command groups
+  ├── config.py        # resolves api_url from flag → LH_API_URL → ~/.lh/config.toml → default
+  ├── client.py        # thin httpx wrapper; raises on non-2xx with parsed error body
+  ├── render.py        # table / json / csv output formatters using rich
+  └── commands/
+      ├── __init__.py
+      ├── tables.py
+      ├── snapshots.py
+      ├── schema.py
+      ├── data.py
+      ├── partitions.py
+      ├── stats.py
+      ├── lineage.py
+      ├── audit.py
+      ├── quality.py
+      ├── vacuum.py
+      ├── query.py
+      └── views.py
+  ```
+- [ ] Register `lh` as a script entrypoint in `pyproject.toml` pointing at `cli.main:app`
+
+### Step 2 — Config, client, and render layer
+
+- [ ] `config.py`: load `api_url` and `output` format with precedence: CLI flag → `LH_API_URL` env var → `~/.lh/config.toml` → built-in default (`http://localhost:8000/api/v1`)
+- [ ] `client.py`: wrap `httpx` with a base URL; on non-2xx responses parse the `{"error": {"code", "message"}}` body and raise a typed exception that commands can catch and print cleanly
+- [ ] `render.py`: implement three formatters — `table` (rich), `json` (pretty-printed), `csv` (stdlib) — that accept a list of column headers and rows and write to stdout
+
+### Step 3 — Implement command groups (one module each)
+
+Implement in this order (simpler → more complex):
+
+- [ ] `tables.py` — `list`, `get`, `delete` (with interactive confirmation)
+- [ ] `snapshots.py` — `list`, `latest`, `get`
+- [ ] `schema.py` — `get`, `validate` (reads schema JSON from `--file`; exits 1 on failure)
+- [ ] `data.py` — `read`, `write` (Parquet only via PyArrow), `compact`
+- [ ] `partitions.py` — `list`, `add`
+- [ ] `stats.py` — `table`, `files`
+- [ ] `lineage.py` — `get`, `record`
+- [ ] `audit.py` — `audit` (top-level command, not a subgroup)
+- [ ] `quality.py` — `contracts list`, `contracts add`, `run` (exits 1 if any check fails)
+- [ ] `vacuum.py` — top-level command; dry-run by default, `--execute` to commit
+- [ ] `query.py` — top-level command; accepts `--sql` or `--file`; exits 1 on query error
+- [ ] `views.py` — `list`, `get`, `create` (SQL from `--sql` or `--file`), `refresh`
+
+### Step 4 — Wire up `main.py`
+
+- [ ] Create the root `lh` Typer app in `main.py`
+- [ ] Add global options (`--api-url`, `--output`/`-o`, `--quiet`/`-q`) via a shared callback
+- [ ] Register all command groups and top-level commands from `commands/`
+
+### Step 5 — Smoke test
+
+- [ ] Start the API server (`uvicorn api.main:app`) and run each command group manually against live data to verify end-to-end output (table, json, and csv formats)
 
