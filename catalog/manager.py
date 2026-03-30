@@ -212,6 +212,28 @@ class CatalogManager:
                         {"view_name": view_name, "view_type": view_type})
         return view_id
 
+    def list_views(self, zone: str = None, view_type: str = None) -> list[View]:
+        """Return all active views, optionally filtered by zone and/or view_type."""
+        query = "SELECT * FROM catalog_views WHERE is_active=1"
+        params: list = []
+        if zone:
+            query += " AND zone=?"
+            params.append(zone)
+        if view_type:
+            query += " AND view_type=?"
+            params.append(view_type)
+        with self._connect() as con:
+            rows = con.execute(query, params).fetchall()
+        return [View.from_row(r) for r in rows]
+
+    def get_view(self, view_id: str) -> Optional[View]:
+        """Return a view by its view_id, or None if not found."""
+        with self._connect() as con:
+            row = con.execute(
+                "SELECT * FROM catalog_views WHERE view_id=?", (view_id,)
+            ).fetchone()
+        return View.from_row(row) if row else None
+
     def refresh_materialized_view(self, view_id: str, snapshot_id: str) -> None:
         """Update a materialized view to point at a new result snapshot."""
         now = datetime.now(timezone.utc).isoformat()
