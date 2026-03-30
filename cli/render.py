@@ -1,12 +1,13 @@
 import csv
 import json
-import sys
+import sys  # still used by _render_csv (csv.writer writes to sys.stdout)
 from typing import Any
 
 from rich.console import Console
 from rich.table import Table
 
 _console = Console()
+_err_console = Console(stderr=True)
 _quiet = False
 
 
@@ -45,7 +46,7 @@ def print_success(message: str) -> None:
 
 
 def print_error(message: str) -> None:
-    _console.print(f"[red]{message}[/red]", file=sys.stderr)
+    _err_console.print(f"[red]{message}[/red]")
 
 
 # --- private helpers ---------------------------------------------------------
