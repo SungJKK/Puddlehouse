@@ -92,4 +92,5 @@ Phase 8   Benchmarking        Load tests, metrics, final report
 
 - [ ] Add docker and kubernetes to spin up multiple nodes for scalability
 - [ ] Add option to save files to local, S3, or other cloud file storages
+- [ ] Add user credentials
 
