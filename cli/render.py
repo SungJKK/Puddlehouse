@@ -7,6 +7,12 @@ from rich.console import Console
 from rich.table import Table
 
 _console = Console()
+_quiet = False
+
+
+def set_quiet(quiet: bool) -> None:
+    global _quiet
+    _quiet = quiet
 
 
 def render(output: str, headers: list[str], rows: list[list[Any]]) -> None:
@@ -26,11 +32,15 @@ def render_raw_json(data: Any) -> None:
 
 def render_kv(pairs: list[tuple[str, Any]]) -> None:
     """Print a vertical key-value block (used for single-record detail views)."""
+    if _quiet:
+        return
     for key, value in pairs:
         _console.print(f"[bold]{key}:[/bold]  {value}")
 
 
 def print_success(message: str) -> None:
+    if _quiet:
+        return
     _console.print(message)
 
 
