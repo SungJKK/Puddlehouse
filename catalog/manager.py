@@ -699,6 +699,16 @@ class CatalogManager:
             )
         """)
 
+    def list_quality_contracts(self, table_id: str) -> list[dict]:
+        """Return all active quality contracts for a table."""
+        with self._connect() as con:
+            self._ensure_quality_table(con)
+            rows = con.execute(
+                "SELECT * FROM catalog_quality_contracts WHERE table_id=? AND is_active=1",
+                (table_id,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def add_quality_contract(
         self, table_id: str, check_type: str, params: dict = None
     ) -> str:
