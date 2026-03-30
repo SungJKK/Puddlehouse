@@ -45,3 +45,25 @@ def writer_env(catalog, monkeypatch):
     import storage.writer as writer_module
     monkeypatch.setattr(writer_module, "catalog", catalog)
     return catalog
+
+
+@pytest.fixture()
+def api_client(writer_env):
+    """
+    FastAPI TestClient wired to the isolated tmp catalog and warehouse.
+    Overrides get_catalog and get_engine so every router uses the same
+    test instances as write_parquet.
+    """
+    from fastapi.testclient import TestClient
+    from api.main import app
+    from api.deps import get_catalog, get_engine
+    from query.engine import QueryEngine
+
+    test_engine = QueryEngine(writer_env)
+    app.dependency_overrides[get_catalog] = lambda: writer_env
+    app.dependency_overrides[get_engine] = lambda: test_engine
+
+    with TestClient(app) as client:
+        yield client
+
+    app.dependency_overrides.clear()

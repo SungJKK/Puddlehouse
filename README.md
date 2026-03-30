@@ -154,7 +154,7 @@ uv run python scripts/init_catalog.py
 
 ```
 $ python -m scripts.[init_catalog, init_lakehouse, ...]
-$ python -m tests.smoke_test
+$ python -m tests.lakehouse.test_smoke
 ```
 
 
@@ -219,7 +219,7 @@ The REST API wraps all catalog, storage, and query engine functionality over HTT
 - [ ] `GET /views/{view_id}` — look up view by `view_id`; return full view record including `refresh_snapshot_id` and `last_refreshed_at`; raise 404 if not found
 - [ ] `POST /views/{view_id}/refresh` — accept `{"snapshot_id": ...}`; call `catalog.refresh_materialized_view(view_id, snapshot_id)`; return 422 if the view is a plain `view` (not materialized); return `{"view_id": ..., "refresh_snapshot_id": ..., "last_refreshed_at": ...}`
 
-**P6-12 — Tests** (`tests/test_api.py`)
+**P6-12 — Tests** (`tests/api/`)
 - [ ] Use FastAPI's `TestClient` (from `starlette.testclient`); patch the catalog and query engine with real in-memory instances populated from `generate_data.py` fixtures
 - [ ] One happy-path test per router group (tables, snapshots, schema, data write+read, compact, partitions, stats, lineage, audit, quality contracts + run, vacuum, query, views)
 - [ ] One error-path test per meaningful error case: 404 for unknown table/snapshot/view, 422 for schema evolution violation, 422 for refreshing a non-materialized view
