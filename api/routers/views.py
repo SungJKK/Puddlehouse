@@ -19,6 +19,7 @@ def _serialize_view(v) -> dict:
         "refresh_snapshot_id": v.refresh_snapshot_id,
         "last_refreshed_at": v.last_refreshed_at,
         "created_at": v.created_at,
+        "updated_at": v.updated_at,
     }
 
 
