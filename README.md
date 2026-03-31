@@ -78,6 +78,21 @@ Planned: add CSV and JSON support to `lh data write` once the core CLI is stable
 
 Refer to `docs/project_phases.md` for an overview of project phases.
 
+## TODO
+
+### Bugs
+- [ ] **`row_count` in snapshots and tables is per-batch, not cumulative** — `commit_write` stores `len(df)` (the current write batch) as the snapshot and table row count. `tables_design.md` specifies snapshot `row_count` as "total live rows across all data files in this snapshot", which requires summing all prior snapshots. A table with three writes of 100 rows each will show `row_count=100` everywhere instead of 300.
+- [ ] **Partition `row_count` is always the total DataFrame count, not per-partition** — In `storage/writer.py`, each partition entry is registered with `row_count=len(df)` (the full write batch size). Every partition file gets the same inflated number regardless of how many rows actually landed in that partition.
+- [ ] **Delete files are tracked in the catalog but never applied at query time** — `catalog_delete_files` is populated correctly via `record_delete`, but `query/engine.py` never joins against it when resolving files. Logical deletes are silently ignored on read; deleted rows are still returned by queries.
+
+### Documentation inaccuracies
+- [ ] **`project_phases.md` says schema validation fires "before data is written" — it doesn't** — Phase 4 states "validate_schema_evolution is called before `commit_write` so any invalid evolution is rejected before data is written." In reality, the Parquet file is written to disk first (Step 1 in `write_parquet`), and validation only runs at Step 3. If validation fails, the file is already orphaned on disk. `puddlehouse_design.md` describes this correctly; the phases doc contradicts it.
+- [ ] **`cli_design.md` documents CSV/JSON write support that isn't implemented** — The `--file` flag is described as accepting "a local Parquet, CSV, or JSON file", but `cli/commands/data.py` rejects anything that isn't `.parquet` with an explicit error. The README Known Limitations section acknowledges this gap, but the CLI design doc does not.
+- [ ] **`puddlehouse_design.md` audit log table is missing the `VACUUM` operation** — The documented operations are `REGISTER`, `DEREGISTER`, `SNAPSHOT`, `DELETE`, `LINEAGE`, `VIEW`. But `catalog/manager.py` also writes a `VACUUM` audit entry on each file deletion during vacuum. This operation is never listed in the docs.
+- [ ] **`api_design.md` schema validate errors show per-column granularity that the code doesn't produce** — The design shows separate error strings per removed/changed column. The actual `validate_schema_evolution` raises a single combined `SchemaEvolutionError` (e.g. `"Cannot remove columns from bronze.users: ['user_id', 'age']"`), and the router wraps it as `[str(e)]` — one string in the list, not one entry per column.
+
+### Minor / Cosmetic
+- [ ] **CLI quality contracts `params` column display doesn't match the design doc** — `cli_design.md` shows params rendered as `min_rows=1` (key=value style). The actual `cli/commands/quality.py` renders `json.dumps(params)`, producing `{"min_rows": 1}` instead.
 
 
 
