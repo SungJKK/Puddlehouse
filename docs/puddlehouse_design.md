@@ -121,7 +121,7 @@ The catalog tracks deletes in `catalog_delete_files`. A delete record points to 
 
 This follows Iceberg's equality-delete pattern: data files are never mutated. A delete is a new file that the reader must apply on top of the data file. The catalog links them explicitly via `file_id`.
 
-**Current limitation**: the query engine (`query/engine.py`) does not yet apply delete files at read time. `QueryEngine.query` resolves data files via snapshots but does not join against `catalog_delete_files`. Delete files are registered and tracked in the catalog but are not enforced during reads. This is a known gap — applying equality deletes at query time requires a filter pass in DuckDB after loading the data file.
+**Delete files are applied at query time.** `QueryEngine._resolve_files` fetches all data files for the requested snapshot, then calls `catalog.get_delete_files_for_data_files` to retrieve any registered delete files. `_build_view_sql` generates a UNION ALL of per-file subqueries; any file that has associated delete files is wrapped in a `SELECT * FROM read_parquet(...) EXCEPT SELECT * FROM read_parquet([delete_paths...])` clause, implementing Iceberg's equality-delete pattern directly in DuckDB.
 
 ---
 
