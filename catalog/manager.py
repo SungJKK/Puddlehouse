@@ -8,6 +8,9 @@ from catalog.models import TableMeta, Column, Snapshot, CatalogFile, DeleteFile,
 
 class SchemaEvolutionError(ValueError):
     """Raised when a write would violate backward-compatible schema evolution rules."""
+    def __init__(self, errors: list[str]):
+        self.errors = errors
+        super().__init__("; ".join(errors))
 
 
 class CatalogManager:
@@ -346,21 +349,20 @@ class CatalogManager:
 
         new_by_name = {col["name"]: col["type"] for col in new_schema}
 
-        removed = sorted(set(existing) - set(new_by_name))
-        if removed:
-            raise SchemaEvolutionError(
-                f"Cannot remove columns from {table_id}: {removed}"
-            )
+        errors = []
 
-        type_changes = [
-            f"'{name}': {existing[name]} -> {new_by_name[name]}"
-            for name in existing
-            if name in new_by_name and existing[name] != new_by_name[name]
-        ]
-        if type_changes:
-            raise SchemaEvolutionError(
-                f"Cannot change column types in {table_id}: {type_changes}"
-            )
+        for name in sorted(set(existing) - set(new_by_name)):
+            errors.append(f"Column '{name}' was removed — not allowed.")
+
+        for name in existing:
+            if name in new_by_name and existing[name] != new_by_name[name]:
+                errors.append(
+                    f"Column '{name}' type changed from {existing[name]}"
+                    f" to {new_by_name[name]} — not allowed."
+                )
+
+        if errors:
+            raise SchemaEvolutionError(errors)
 
     # ── Atomic Write Commit ───────────────────────────────────────────
 

@@ -74,7 +74,7 @@ def validate_schema(
     except SchemaEvolutionError as e:
         return {
             "valid": False,
-            "errors": [str(e)],
+            "errors": e.errors,
         }
 
     return {

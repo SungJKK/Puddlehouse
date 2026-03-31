@@ -48,7 +48,7 @@ class TestAllowedEvolution:
 class TestDisallowedEvolution:
     def test_remove_column_raises(self, writer_env):
         write_parquet(make_df(id="a", val=1), "bronze", "users")
-        with pytest.raises(SchemaEvolutionError, match="Cannot remove"):
+        with pytest.raises(SchemaEvolutionError, match="was removed"):
             write_parquet(make_df(id="b"), "bronze", "users")
 
     def test_remove_column_error_names_the_column(self, writer_env):
@@ -68,7 +68,7 @@ class TestDisallowedEvolution:
         df1 = pd.DataFrame({"id": ["a"], "val": [1]})       # val: int64
         df2 = pd.DataFrame({"id": ["b"], "val": [1.5]})     # val: float64
         write_parquet(df1, "bronze", "users")
-        with pytest.raises(SchemaEvolutionError, match="Cannot change"):
+        with pytest.raises(SchemaEvolutionError, match="type changed"):
             write_parquet(df2, "bronze", "users")
 
     def test_type_change_error_names_the_column(self, writer_env):
@@ -81,8 +81,30 @@ class TestDisallowedEvolution:
     def test_rename_raises_as_remove_and_add(self, writer_env):
         write_parquet(make_df(id="a", val=1), "bronze", "users")
         # Renaming 'val' → 'value' looks like removing 'val' and adding 'value'
-        with pytest.raises(SchemaEvolutionError, match="Cannot remove"):
+        with pytest.raises(SchemaEvolutionError, match="was removed"):
             write_parquet(make_df(id="b", value=2), "bronze", "users")
+
+
+class TestErrorGranularity:
+    def test_each_removed_column_is_a_separate_error(self, writer_env):
+        write_parquet(make_df(id="a", val=1, score=0.5), "bronze", "users")
+        with pytest.raises(SchemaEvolutionError) as exc_info:
+            write_parquet(make_df(id="b"), "bronze", "users")
+        errors = exc_info.value.errors
+        assert len(errors) == 2
+        assert any("val" in e for e in errors)
+        assert any("score" in e for e in errors)
+
+    def test_all_violations_reported_in_one_raise(self, writer_env):
+        # Remove one column AND change a type — both should appear
+        df1 = pd.DataFrame({"id": ["a"], "val": [1], "score": [0.5]})
+        df2 = pd.DataFrame({"id": ["b"], "val": [1.5]})   # score removed, val type changed
+        write_parquet(df1, "bronze", "users")
+        with pytest.raises(SchemaEvolutionError) as exc_info:
+            write_parquet(df2, "bronze", "users")
+        errors = exc_info.value.errors
+        assert any("score" in e and "removed" in e for e in errors)
+        assert any("val" in e and "type changed" in e for e in errors)
 
 
 class TestValidationDoesNotBlockCompaction:
