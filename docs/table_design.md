@@ -61,7 +61,7 @@ Immutable point-in-time versions of a table. Each write operation commits a new 
 | `snapshot_id` | TEXT PK | UUID |
 | `table_id` | TEXT FK → `catalog_tables.table_id` | The table this snapshot belongs to |
 | `version` | INTEGER | Monotonically increasing version number per table |
-| `row_count` | INTEGER | Cumulative raw write count across all data files up to and including this snapshot; not adjusted for logical deletes |
+| `row_count` | INTEGER | Cumulative row count up to and including this snapshot, adjusted for logical deletes (raw writes minus total deleted rows at commit time) |
 | `byte_size` | INTEGER | Total byte size across all Parquet files in this snapshot |
 | `created_at` | TEXT | UTC ISO-8601 timestamp |
 
