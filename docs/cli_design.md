@@ -257,7 +257,7 @@ lh data write <zone>/<entity> --file <path> [flags]
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--file` | Yes | Path to a local Parquet, CSV, or JSON file to ingest |
+| `--file` | Yes | Path to a local `.parquet` file to ingest (CSV and JSON not yet supported) |
 | `--partition-cols` | No | Comma-separated column names to partition by (e.g., `date,region`) |
 | `--job-name` | No | Label for lineage tracking (default: `"cli"`) |
 | `--run-id` | No | Idempotency/tracking key for the job run |
