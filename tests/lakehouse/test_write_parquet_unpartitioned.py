@@ -104,3 +104,12 @@ class TestWriteParquetUnpartitioned:
         ).fetchone()[0]
         con.close()
         assert count > 0
+
+    def test_row_count_is_cumulative_across_writes(self, writer_env):
+        write_parquet(users_df(10), "bronze", "users")
+        write_parquet(users_df(15), "bronze", "users")
+        write_parquet(users_df(5), "bronze", "users")
+        snap = writer_env.get_latest_snapshot("bronze.users")
+        assert snap.row_count == 30
+        tbl = writer_env.get_table("bronze.users")
+        assert tbl.row_count == 30

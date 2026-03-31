@@ -143,12 +143,15 @@ def write_parquet(
     table_col_stats = _compute_table_stats(arrow_table)
 
     # ── 3. Validate schema evolution, then atomic catalog commit ──────
+    existing_snap = catalog.get_latest_snapshot(f"{zone}.{entity}")
+    cumulative_row_count = (existing_snap.row_count if existing_snap else 0) + len(df)
+
     catalog.validate_schema_evolution(f"{zone}.{entity}", schema)
     catalog.commit_write(
         zone=zone,
         entity=entity,
         files_meta=files_meta,
-        row_count=len(df),
+        row_count=cumulative_row_count,
         byte_size=byte_size,
         schema=schema,
         file_col_stats=file_col_stats,
