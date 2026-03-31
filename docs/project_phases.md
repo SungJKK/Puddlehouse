@@ -62,8 +62,10 @@ Phase 4   Schema Evolution    Versioned schemas, backward compatibility         
   - CatalogManager.validate_schema_evolution(): checks new schema against the
     current active columns; raises if any column is removed or has its type
     changed; passes silently on first write (no existing schema to compare)
-  - write_parquet() enforcement: validate_schema_evolution is called before
-    commit_write so any invalid evolution is rejected before data is written
+  - write_parquet() enforcement: validate_schema_evolution is called after
+    the Parquet file is written but before commit_write, so the catalog is
+    never left in a half-committed state; if validation fails the file is
+    already on disk (orphaned) but the catalog remains unchanged
   - compact() is exempt: it re-writes existing data with the same schema and
     calls commit_write directly, bypassing write_parquet validation
 
