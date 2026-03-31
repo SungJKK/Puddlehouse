@@ -94,5 +94,12 @@ Refer to `docs/project_phases.md` for an overview of project phases.
 ### Minor / Cosmetic
 - [x] **CLI quality contracts `params` column display doesn't match the design doc** — `cli_design.md` shows params rendered as `min_rows=1` (key=value style). The actual `cli/commands/quality.py` renders `json.dumps(params)`, producing `{"min_rows": 1}` instead.
 
+### Documentation inaccuracies (continued)
+- [x] **`table_design.md` says "eleven tables" and omits `catalog_quality_contracts`** — The doc states "There are eleven tables" but twelve exist. `catalog_quality_contracts` has no section, is absent from the Relationships diagram, and has no entry in the Indexes table.
+- [x] **`table_design.md` `catalog_snapshots.row_count` says "after logical deletes" — it doesn't** — The description reads "Total live rows across all data files in this snapshot (after logical deletes)". In reality `row_count` is a cumulative raw write count accumulated across all prior snapshots; it is never adjusted for logical deletes. `commit_write` sums snapshots forward from the prior snapshot but does not subtract any delete counts.
+
+### Future Work
+- [ ] **Delete-aware row counts** — `catalog_snapshots.row_count` and `catalog_tables.row_count` should reflect live row counts after applying logical deletes. Currently they track cumulative raw writes only. Computing accurate live counts requires summing data file row counts and subtracting delete file `delete_count` values for all active delete files at each snapshot.
+
 
 

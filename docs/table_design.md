@@ -1,6 +1,6 @@
 # Catalog Tables
 
-The SQLite catalog (`catalog.db`) tracks all metadata for the lakehouse. It is hand-rolled — no external catalog framework is used. There are eleven tables.
+The SQLite catalog (`catalog.db`) tracks all metadata for the lakehouse. It is hand-rolled — no external catalog framework is used. There are twelve tables.
 
 ---
 
@@ -61,7 +61,7 @@ Immutable point-in-time versions of a table. Each write operation commits a new 
 | `snapshot_id` | TEXT PK | UUID |
 | `table_id` | TEXT FK → `catalog_tables.table_id` | The table this snapshot belongs to |
 | `version` | INTEGER | Monotonically increasing version number per table |
-| `row_count` | INTEGER | Total live rows across all data files in this snapshot (after logical deletes) |
+| `row_count` | INTEGER | Cumulative raw write count across all data files up to and including this snapshot; not adjusted for logical deletes |
 | `byte_size` | INTEGER | Total byte size across all Parquet files in this snapshot |
 | `created_at` | TEXT | UTC ISO-8601 timestamp |
 
@@ -212,6 +212,23 @@ Append-only log of every write operation performed through `CatalogManager`. Use
 
 ---
 
+## catalog_quality_contracts
+
+Stores quality check definitions for tables. Each row is one contract — a named check type and its parameters. Contracts are evaluated on demand via the `/quality/run` endpoint; no files are read, only catalog metadata is inspected.
+
+| Column | Type | Description |
+|---|---|---|
+| `contract_id` | TEXT PK | UUID |
+| `table_id` | TEXT FK → `catalog_tables.table_id` | The table this contract applies to |
+| `check_type` | TEXT | Contract kind: `not_empty`, `freshness_days`, or `max_null_fraction` |
+| `params` | TEXT | JSON blob of check-specific parameters, e.g. `{"min_rows": 1}` |
+| `created_at` | TEXT | UTC ISO-8601 timestamp |
+| `is_active` | INTEGER | Soft-delete flag: `1` = active, `0` = deactivated |
+
+No index exists for this table — contract lists are always looked up by `table_id` with a full scan, which is acceptable given the expected low row count.
+
+---
+
 ## Relationships
 
 ```
@@ -227,6 +244,7 @@ catalog_columns   (1) ──< catalog_file_column_stats (stats tied to versioned
 catalog_tables    (1) ──< catalog_lineage           (many jobs produced this table)
 catalog_tables    (1) ──< catalog_partitions        (many partition files per table)
 catalog_tables    (1) ──< catalog_audit_log         (many audit entries per table)
+catalog_tables    (1) ──< catalog_quality_contracts (many quality contracts per table)
 catalog_views     (0..1) ─ catalog_snapshots        (materialized views reference a result snapshot)
 ```
 
