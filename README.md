@@ -92,7 +92,7 @@ Refer to `docs/project_phases.md` for an overview of project phases.
 - [x] **`api_design.md` schema validate errors show per-column granularity that the code doesn't produce** — The design shows separate error strings per removed/changed column. The actual `validate_schema_evolution` raises a single combined `SchemaEvolutionError` (e.g. `"Cannot remove columns from bronze.users: ['user_id', 'age']"`), and the router wraps it as `[str(e)]` — one string in the list, not one entry per column.
 
 ### Minor / Cosmetic
-- [ ] **CLI quality contracts `params` column display doesn't match the design doc** — `cli_design.md` shows params rendered as `min_rows=1` (key=value style). The actual `cli/commands/quality.py` renders `json.dumps(params)`, producing `{"min_rows": 1}` instead.
+- [x] **CLI quality contracts `params` column display doesn't match the design doc** — `cli_design.md` shows params rendered as `min_rows=1` (key=value style). The actual `cli/commands/quality.py` renders `json.dumps(params)`, producing `{"min_rows": 1}` instead.
 
 
 

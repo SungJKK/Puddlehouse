@@ -36,7 +36,12 @@ def contracts_list(
 
     headers = ["contract_id", "check_type", "params", "is_active"]
     rows = [
-        [c["contract_id"], c["check_type"], json.dumps(c["params"]), "yes" if c["is_active"] else "no"]
+        [
+            c["contract_id"],
+            c["check_type"],
+            ", ".join(f"{k}={v}" for k, v in c["params"].items()),
+            "yes" if c["is_active"] else "no",
+        ]
         for c in data["contracts"]
     ]
     render(cfg.output, headers, rows)
