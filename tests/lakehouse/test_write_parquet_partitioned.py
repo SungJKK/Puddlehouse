@@ -81,3 +81,18 @@ class TestWriteParquetPartitioned:
         write_parquet(events_df(), "bronze", "events", partition_cols=["date"])
         snap = writer_env.get_latest_snapshot("bronze.events")
         assert snap.version == 2
+
+    def test_partition_row_count_is_per_partition_not_total(self, writer_env):
+        # date=2025-01-01 has 2 rows, date=2025-01-02 has 1 row, date=2025-01-03 has 1 row
+        write_parquet(events_df(), "bronze", "events", partition_cols=["date"])
+        con = db_connect(writer_env.catalog_path)
+        rows = {
+            r["partition_val"]: r["row_count"]
+            for r in con.execute(
+                "SELECT partition_val, row_count FROM catalog_partitions WHERE table_id='bronze.events'"
+            ).fetchall()
+        }
+        con.close()
+        assert rows["2025-01-01"] == 2
+        assert rows["2025-01-02"] == 1
+        assert rows["2025-01-03"] == 1

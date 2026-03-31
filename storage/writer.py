@@ -119,10 +119,11 @@ def write_parquet(
         )
         written_files = [str(p) for p in out_dir.rglob("*.parquet")]
         for f in written_files:
+            file_row_count = pq.ParquetFile(f).metadata.num_rows
             for part in Path(f).parent.relative_to(out_dir).parts:
                 if "=" in part:
                     key, val = part.split("=", 1)
-                    partitions.append({"key": key, "val": val, "file_path": f, "row_count": len(df)})
+                    partitions.append({"key": key, "val": val, "file_path": f, "row_count": file_row_count})
     else:
         fname = out_dir / f"{run_id}.parquet"
         pq.write_table(arrow_table, fname, compression="snappy")
