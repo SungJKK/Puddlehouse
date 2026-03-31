@@ -183,6 +183,7 @@ Lineage is directional: `get_lineage(table_id, direction="upstream")` returns wh
 | `DELETE`    | Logical delete file registration       |
 | `LINEAGE`   | Every committed write                  |
 | `VIEW`      | View registration                      |
+| `VACUUM`    | Each file deleted during vacuum        |
 
 The audit log is append-only and is never modified after insertion. It is queryable via `GET /api/v1/tables/{zone}/{entity}/audit`.
 
