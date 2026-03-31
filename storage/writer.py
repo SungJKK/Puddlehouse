@@ -145,7 +145,8 @@ def write_parquet(
 
     # ── 3. Validate schema evolution, then atomic catalog commit ──────
     existing_snap = catalog.get_latest_snapshot(f"{zone}.{entity}")
-    cumulative_row_count = (existing_snap.row_count if existing_snap else 0) + len(df)
+    total_deleted = catalog.get_total_delete_count(f"{zone}.{entity}")
+    cumulative_row_count = (existing_snap.row_count if existing_snap else 0) + len(df) - total_deleted
 
     catalog.validate_schema_evolution(f"{zone}.{entity}", schema)
     catalog.commit_write(

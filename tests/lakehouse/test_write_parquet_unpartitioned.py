@@ -1,4 +1,5 @@
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from pathlib import Path
@@ -113,3 +114,30 @@ class TestWriteParquetUnpartitioned:
         assert snap.row_count == 30
         tbl = writer_env.get_table("bronze.users")
         assert tbl.row_count == 30
+
+    def test_row_count_subtracts_logical_deletes(self, writer_env, tmp_path):
+        # Write 10 rows, then register 3 logical deletes, then write 5 more rows.
+        # The final snapshot row_count should be 10 - 3 + 5 = 12.
+        write_parquet(users_df(10), "bronze", "users")
+
+        snap = writer_env.get_latest_snapshot("bronze.users")
+        files = writer_env.get_snapshot_files(snap.snapshot_id)
+        data_file = files[0]
+
+        delete_path = str(tmp_path / "delete.parquet")
+        pq.write_table(pa.table({"user_id": ["x", "y", "z"], "name": ["a", "b", "c"], "email": ["", "", ""]}), delete_path)
+        writer_env.record_delete(
+            table_id="bronze.users",
+            snapshot_id=snap.snapshot_id,
+            file_id=data_file.file_id,
+            delete_file_path=delete_path,
+            delete_count=3,
+            byte_size=100,
+        )
+
+        write_parquet(users_df(5), "bronze", "users")
+
+        snap2 = writer_env.get_latest_snapshot("bronze.users")
+        assert snap2.row_count == 12
+        tbl = writer_env.get_table("bronze.users")
+        assert tbl.row_count == 12

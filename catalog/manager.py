@@ -315,6 +315,15 @@ class CatalogManager:
             result.setdefault(row["file_id"], []).append(row["delete_file_path"])
         return result
 
+    def get_total_delete_count(self, table_id: str) -> int:
+        """Return the total number of logically deleted rows across all delete files for a table."""
+        with self._connect() as con:
+            row = con.execute(
+                "SELECT COALESCE(SUM(delete_count), 0) FROM catalog_delete_files WHERE table_id=?",
+                (table_id,),
+            ).fetchone()
+        return int(row[0])
+
     def list_partitions(self, table_id: str) -> list[Partition]:
         """Return all partition entries for a table."""
         with self._connect() as con:
