@@ -1,6 +1,7 @@
 import duckdb
 import pandas as pd
 from catalog.manager import CatalogManager
+from catalog.models import CatalogFile
 from config import config
 
 catalog = CatalogManager()
@@ -33,10 +34,14 @@ class QueryEngine:
         table_id  = f"{zone}.{entity}"
         view_name = f"{zone}_{entity}"
 
-        file_paths = self._resolve_files(table_id, version, partition_filters)
-        self._con.execute(
-            f"CREATE OR REPLACE VIEW {view_name} AS SELECT * FROM read_parquet({file_paths!r})"
-        )
+        files = self._resolve_files(table_id, version, partition_filters)
+
+        # Apply logical deletes: for each data file, subtract any registered delete files
+        file_ids   = [f.file_id for f in files]
+        delete_map = self._catalog.get_delete_files_for_data_files(file_ids)
+        view_sql   = self._build_view_sql(files, delete_map)
+
+        self._con.execute(f"CREATE OR REPLACE VIEW {view_name} AS {view_sql}")
         return self._con.execute(sql).df()
 
     # ── Internal ──────────────────────────────────────────────────────
@@ -46,7 +51,7 @@ class QueryEngine:
         table_id: str,
         version: int = None,
         partition_filters: dict[str, str] = None,
-    ) -> list[str]:
+    ) -> list[CatalogFile]:
         if version is not None:
             snap = self._catalog.get_snapshot_at_version(table_id, version)
             if snap is None:
@@ -65,16 +70,45 @@ class QueryEngine:
         # Deduplicate preserving order — a file can appear in multiple snapshots
         # if the partitioned writer re-registers existing files on each write.
         seen: set[str] = set()
-        file_paths: list[str] = []
+        deduped: list[CatalogFile] = []
         for f in files:
             if f.file_path not in seen:
                 seen.add(f.file_path)
-                file_paths.append(f.file_path)
+                deduped.append(f)
 
         if partition_filters:
-            file_paths = self._prune_by_partitions(table_id, file_paths, partition_filters)
+            pruned_paths = self._prune_by_partitions(
+                table_id, [f.file_path for f in deduped], partition_filters
+            )
+            path_set = set(pruned_paths)
+            deduped = [f for f in deduped if f.file_path in path_set]
 
-        return file_paths
+        return deduped
+
+    def _build_view_sql(
+        self,
+        files: list[CatalogFile],
+        delete_map: dict[str, list[str]],
+    ) -> str:
+        """
+        Build a SQL expression that reads all data files and applies any registered
+        delete files via EXCEPT (equality-delete pattern).
+
+        Files with no delete records are read directly. Files with delete records
+        have matching rows subtracted before being unioned with the rest.
+        """
+        parts = []
+        for f in files:
+            delete_paths = delete_map.get(f.file_id, [])
+            if delete_paths:
+                parts.append(
+                    f"(SELECT * FROM read_parquet({[f.file_path]!r})"
+                    f" EXCEPT"
+                    f" SELECT * FROM read_parquet({delete_paths!r}))"
+                )
+            else:
+                parts.append(f"SELECT * FROM read_parquet({[f.file_path]!r})")
+        return " UNION ALL ".join(parts)
 
     def _prune_by_partitions(
         self,

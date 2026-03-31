@@ -1,4 +1,6 @@
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from storage.writer import write_parquet
@@ -170,3 +172,62 @@ class TestQueryPartitionPruning:
             partition_filters={"date": "2025-01-01"},
         )
         assert len(result) == 2
+
+
+class TestQueryLogicalDeletes:
+    def test_deleted_rows_excluded_from_query(self, engine, writer_env, tmp_path):
+        # Write 3 rows
+        write_parquet(batch(["a", "b", "c"]), "bronze", "users")
+
+        # Get the file_id for the written file
+        snap = writer_env.get_latest_snapshot("bronze.users")
+        files = writer_env.get_snapshot_files(snap.snapshot_id)
+        assert len(files) == 1
+        data_file = files[0]
+
+        # Write a delete file containing the row to remove (id="b", val=1)
+        delete_path = str(tmp_path / "delete.parquet")
+        pq.write_table(
+            pa.table({"id": ["b"], "val": [1]}),
+            delete_path,
+        )
+
+        # Register the delete file in the catalog
+        writer_env.record_delete(
+            table_id="bronze.users",
+            snapshot_id=snap.snapshot_id,
+            file_id=data_file.file_id,
+            delete_file_path=delete_path,
+            delete_count=1,
+            byte_size=100,
+        )
+
+        result = engine.query("SELECT * FROM bronze_users", "bronze", "users")
+        assert set(result["id"].tolist()) == {"a", "c"}
+        assert "b" not in result["id"].tolist()
+
+    def test_non_deleted_files_unaffected(self, engine, writer_env, tmp_path):
+        # Two writes → two files; delete only from the first file
+        write_parquet(batch(["a", "b"]), "bronze", "users")
+        write_parquet(batch(["c", "d"]), "bronze", "users")
+
+        # Get file_id for the first snapshot's file
+        snaps = writer_env.list_snapshots("bronze.users")
+        files_v1 = writer_env.get_snapshot_files(snaps[0].snapshot_id)
+        data_file = files_v1[0]
+
+        delete_path = str(tmp_path / "delete.parquet")
+        pq.write_table(pa.table({"id": ["a"], "val": [0]}), delete_path)
+
+        writer_env.record_delete(
+            table_id="bronze.users",
+            snapshot_id=snaps[0].snapshot_id,
+            file_id=data_file.file_id,
+            delete_file_path=delete_path,
+            delete_count=1,
+            byte_size=100,
+        )
+
+        result = engine.query("SELECT * FROM bronze_users", "bronze", "users")
+        assert set(result["id"].tolist()) == {"b", "c", "d"}
+        assert "a" not in result["id"].tolist()

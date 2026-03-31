@@ -296,6 +296,22 @@ class CatalogManager:
             """, (partition_id, table_id, key, val, file_path, row_count))
         return partition_id
 
+    def get_delete_files_for_data_files(self, file_ids: list[str]) -> dict[str, list[str]]:
+        """Return {file_id: [delete_file_path, ...]} for a set of data file IDs."""
+        if not file_ids:
+            return {}
+        placeholders = ",".join("?" * len(file_ids))
+        with self._connect() as con:
+            rows = con.execute(
+                f"SELECT file_id, delete_file_path FROM catalog_delete_files "
+                f"WHERE file_id IN ({placeholders})",
+                file_ids,
+            ).fetchall()
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            result.setdefault(row["file_id"], []).append(row["delete_file_path"])
+        return result
+
     def list_partitions(self, table_id: str) -> list[Partition]:
         """Return all partition entries for a table."""
         with self._connect() as con:
